@@ -40,6 +40,9 @@ extern "C" {
 // Live2LOVE
 #include "Live2LOVE.h"
 
+// Live2D Library (additional)
+#include "base/IBaseContext.h"
+
 // RefData
 #include "RefData.h"
 
@@ -48,11 +51,11 @@ static bool compareDrawOrder(const live2love::Live2LOVEMesh *a, const live2love:
 {
 	int da = a->drawData->getDrawOrder(*a->modelContext, a->drawContext);
 	int db = b->drawData->getDrawOrder(*b->modelContext, b->drawContext);
-	return da < db;
+	return da == db ? a->drawDataIndex < b->drawDataIndex : da < db;
 }
 
 // Push the FileData into stack. fileSize must not be NULL
-static const void *loadFileData(lua_State *L, const std::string& path, size_t *fileSize)
+void *loadFileData(lua_State *L, const std::string& path, size_t *fileSize)
 {
 	// New file data
 	RefData::getRef(L, "love.filesystem.newFileData");
@@ -90,6 +93,25 @@ static const void *loadFileData(lua_State *L, const std::string& path, size_t *f
 	return ptr;
 }
 
+// Push the ByteData into stack.
+template<class T> T* createData(lua_State *L, size_t amount = 1)
+{
+	lua_checkstack(L, lua_gettop(L) + 8);
+	size_t memalloc = sizeof(T) * amount;
+	// New file data
+	RefData::getRef(L, "love.data.newByteData");
+	lua_pushinteger(L, memalloc);
+	lua_call(L, 1, 1);
+	lua_getfield(L, -1, "getPointer");
+	lua_pushvalue(L, -2);
+	lua_call(L, 1, 1);
+	T* val = (T*)lua_topointer(L, -1);
+	lua_pop(L, 1); // pop the pointer
+
+	// Leave the ByteData in stack
+	return val;
+}
+
 live2love::Live2LOVE::Live2LOVE(lua_State *L, const std::string& path)
 : L(L)
 , motionLoop("")
@@ -103,6 +125,9 @@ live2love::Live2LOVE::Live2LOVE(lua_State *L, const std::string& path)
 	const void *modelData = loadFileData(L, path, &modelSize);
 	// Init model
 	model = Live2DModel::loadModel(modelData, modelSize);
+	if (model == nullptr) throw namedException("Failed to load model");
+
+	model->setPremultipliedAlpha(false);
 	model->update();
 	// Pop the FileData
 	lua_pop(L, 1);
@@ -144,7 +169,7 @@ void live2love::Live2LOVE::setupMeshData()
 	meshData.reserve(drawableCount);
 	// Push newMesh
 	RefData::getRef(L, "love.graphics.newMesh");
-
+	
 	for (int i = 0; i < drawableCount; i++)
 	{
 		// Get DrawDataTexture object
@@ -168,39 +193,34 @@ void live2love::Live2LOVE::setupMeshData()
 		l2d_pointf *points = model->getTransformedPoints(i, &numPoints);
 		int verticesCount = polygonCount * 3;
 		
-		// Build mesh table
+		// Build mesh
 		lua_pushvalue(L, -1); // love.graphics.newMesh
-		lua_createtable(L, verticesCount, 0); // Mesh table list
-		for (int j = 0; j < verticesCount; j++)
-		{
-			l2d_index k = vertexMap[j];
-			// Mesh table format: {x, y, u, v, r, g, b, a}
-			// r, g, b will be 1
-			lua_createtable(L, 8, 0);
-			lua_pushnumber(L, opacity); // a
-			lua_pushnumber(L, 1); lua_pushnumber(L, 1); lua_pushnumber(L, 1); // r,g,b
-			lua_pushnumber(L, uvmap[k * 2 + 1]); // v
-			lua_pushnumber(L, uvmap[k * 2 + 0]); // u
-			lua_pushnumber(L, points[k * 2 + 1]); // y
-			lua_pushnumber(L, points[k * 2 + 0]); // x
-			lua_rawseti(L, -9, 1); // x
-			lua_rawseti(L, -8, 2); // y
-			lua_rawseti(L, -7, 3); // u
-			lua_rawseti(L, -6, 4); // v
-			lua_rawseti(L, -5, 5); // r
-			lua_rawseti(L, -4, 6); // g
-			lua_rawseti(L, -3, 7); // b
-			lua_rawseti(L, -2, 8); // a
-			lua_rawseti(L, -2, j + 1); // Set table
-		}
-		mesh->tableRefID = RefData::setRef(L, -1); // Add table reference
+		lua_pushinteger(L, verticesCount);
 		lua_pushstring(L, "triangles"); // Mesh draw mode
 		lua_pushstring(L, "stream"); // Mesh usage
 		lua_call(L, 3, 1); // love.graphics.newMesh
 		mesh->meshRefID = RefData::setRef(L, -1); // Add mesh reference
-
 		// Pop the Mesh object
 		lua_pop(L, 1);
+		
+		Live2LOVEMeshFormat *meshDataRaw = createData<Live2LOVEMeshFormat>(L, verticesCount);
+		for (int j = 0; j < verticesCount; j++)
+		{
+			Live2LOVEMeshFormat& m = meshDataRaw[j];
+			l2d_index k = vertexMap[j];
+			// Mesh table format: {x, y, u, v, r, g, b, a}
+			// r, g, b will be 1
+			m.x = points[k * 2 + 0];
+			m.y = points[k * 2 + 1];
+			m.u = uvmap[k * 2 + 0];
+			m.v = uvmap[k * 2 + 1];
+			m.r = m.g = m.b = 255;
+			m.a = floor(opacity * 255.0);
+		}
+		mesh->tableRefID = RefData::setRef(L, -1); // Add FileData reference
+		mesh->tablePointer = meshDataRaw;
+		lua_pop(L, 1); // pop the FileData reference
+
 		// Push to vector
 		meshData.push_back(mesh);
 	}
@@ -213,11 +233,13 @@ void live2love::Live2LOVE::update(double dT)
 	// Motion update
 	if (motion)
 	{
+		model->loadParam();
 		if (motion->isFinished() && motionLoop.length() > 0)
 			// Revert
 			motion->startMotion(motionList[motionLoop], false);
 
 		motion->updateParam(model);
+		model->saveParam();
 	}
 	// Expression update
 	if (expression) expression->updateParam(model);
@@ -231,6 +253,7 @@ void live2love::Live2LOVE::update(double dT)
 	// Update model
 	model->update();
 	// Update mesh data
+	volatile float debugOpacity = 2.0; // debug
 	for (auto mesh: meshData)
 	{
 		// Get mesh ref
@@ -238,10 +261,12 @@ void live2love::Live2LOVE::update(double dT)
 		// Get "setVertices"
 		lua_getfield(L, -1, "setVertices");
 		lua_pushvalue(L, -2);
-		// Get table mesh ref
+		// Get data mesh ref
 		RefData::getRef(L, mesh->tableRefID);
 		int polygonCount, meshLen;
-		double opacity = mesh->drawData->getOpacity(*mesh->modelContext, mesh->drawContext);
+		double opacity =
+			double(mesh->drawContext->interpolatedOpacity) *
+			double(mesh->drawContext->baseOpacity);
 		l2d_index *vertexMap = mesh->drawData->getIndexArray(&polygonCount);
 		l2d_pointf *points = model->getTransformedPoints(mesh->drawDataIndex, &meshLen);
 		meshLen = polygonCount * 3;
@@ -249,15 +274,11 @@ void live2love::Live2LOVE::update(double dT)
 		// Update
 		for (int j = 0; j < meshLen; j++)
 		{
+			Live2LOVEMeshFormat& m = mesh->tablePointer[j];
 			l2d_index i = vertexMap[j];
-			lua_rawgeti(L, -1, j + 1);
-			lua_pushnumber(L, opacity); // a
-			lua_pushnumber(L, points[i * 2 + 1]); // y
-			lua_pushnumber(L, points[i * 2 + 0]); // x
-			lua_rawseti(L, -4, 1); // x
-			lua_rawseti(L, -3, 2); // y
-			lua_rawseti(L, -2, 8); // a
-			lua_pop(L, 1); // Remove modified table
+			m.x = points[i * 2 + 0];
+			m.y = points[i * 2 + 1];
+			m.a = floor(opacity * 255.0);
 		}
 
 		// Call setVertices
@@ -270,11 +291,55 @@ void live2love::Live2LOVE::update(double dT)
 void live2love::Live2LOVE::draw(double x, double y, double r, double sx, double sy, double ox, double oy, double kx, double ky)
 {
 	lua_checkstack(L, lua_gettop(L) + 15);
+	// Save blending
+	RefData::getRef(L, "love.graphics.setBlendMode");
+	RefData::getRef(L, "love.graphics.getBlendMode");
+	lua_call(L, 0, 2);
+	// Set blending mode to alpha,alphamultiply
+	lua_pushvalue(L, -3);
+	lua_pushstring(L, "alpha");
+	lua_pushstring(L, "alphamultiply");
+	lua_call(L, 2, 0);
+	int blendMode = live2d::DDTexture::COLOR_COMPOSITION_NORMAL; // alpha,alphamultiply
 	// Get love.graphics.draw
 	RefData::getRef(L, "love.graphics.draw");
 	// List mesh data
 	for (auto mesh: meshData)
 	{
+		int meshBlendMode = (mesh->drawData->getOptionFlag() >> 1) & 3;
+		if (meshBlendMode != blendMode)
+		{
+			// Push love.graphics.setBlendMode
+			lua_pushvalue(L, -4);
+			switch(blendMode = meshBlendMode)
+			{
+				default:
+				case live2d::DDTexture::COLOR_COMPOSITION_NORMAL:
+				{
+					// Normal blending (alpha,alphamultiply)
+					lua_pushstring(L, "alpha");
+					lua_pushstring(L, "alphamultiply");
+					break;
+				}
+				case live2d::DDTexture::COLOR_COMPOSITION_SCREEN:
+				{
+					// Screen blending (add,alphamultiply)
+					// but why it should be "add" tho...
+					lua_pushstring(L, "add");
+					lua_pushstring(L, "alphamultiply");
+					break;
+				}
+				case live2d::DDTexture::COLOR_COMPOSITION_MULTIPLY:
+				{
+					// Multiply bnending (multiply,premultiplied)
+					lua_pushstring(L, "multiply");
+					lua_pushstring(L, "alphamultiply");
+					break;
+				}
+			}
+			// Call it
+			lua_call(L, 2, 0);
+		}
 		lua_pushvalue(L, -1);
 		RefData::getRef(L, mesh->meshRefID);
 		lua_pushnumber(L, x);
@@ -289,6 +354,11 @@ void live2love::Live2LOVE::draw(double x, double y, double r, double sx, double 
 		// Draw
 		lua_call(L, 10, 0);
 	}
+
+	// Remove love.graphics.draw
+	lua_pop(L, 1);
+	// Reset blend mode
+	lua_call(L, 2, 0);
 }
 
 void live2love::Live2LOVE::setTexture(int live2dtexno, int loveimageidx)
@@ -351,6 +421,8 @@ void live2love::Live2LOVE::loadMotion(const std::string& name, const std::pair<d
 	size_t motionSize;
 	const void *motionData = loadFileData(L, path, &motionSize);
 	live2d::AMotion *motion = live2d::Live2DMotion::loadMotion(motionData, motionSize);
+	if (motion == nullptr) throw namedException("Failed to load motion");
+
 	motion->setFadeIn(fade.first);
 	motion->setFadeOut(fade.second);
 	// Remove FileData
@@ -367,6 +439,8 @@ void live2love::Live2LOVE::loadExpression(const std::string& name, const std::st
 	size_t exprSize;
 	const void *exprData = loadFileData(L, path, &exprSize);
 	live2d::framework::L2DExpressionMotion *expr = live2d::framework::L2DExpressionMotion::loadJson(exprData, exprSize);
+	if (expr == nullptr) throw namedException("Failed to load expression");
+
 	// Set expression
 	if (expressionList.find(name) != expressionList.end()) delete expressionList[name];
 	expressionList[name] = expr;
@@ -378,6 +452,7 @@ void live2love::Live2LOVE::loadPhysics(const std::string& path)
 	size_t physicsSize;
 	const void *physicsData = loadFileData(L, path, &physicsSize);
 	physics = live2d::framework::L2DPhysics::load(physicsData, physicsSize);
+	if (physics == nullptr) throw namedException("Failed to load physics");
 }
 
 inline void live2love::Live2LOVE::initializeMotion()

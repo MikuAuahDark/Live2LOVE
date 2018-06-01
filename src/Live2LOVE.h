@@ -72,6 +72,13 @@ namespace live2love
 {
 	typedef std::runtime_error namedException;
 
+	// Default LOVE mesh format
+	struct Live2LOVEMeshFormat
+	{
+		float x, y, u, v;
+		unsigned char r, g, b, a;
+	};
+
 	// Live2LOVE mesh object
 	struct Live2LOVEMesh
 	{
@@ -85,6 +92,7 @@ namespace live2love
 		live2d::IDrawContext *drawContext;
 		// Mesh object reference and mesh table reference
 		int meshRefID, tableRefID;
+		Live2LOVEMeshFormat *tablePointer;
 	};
 
 	// Live2LOVE model object

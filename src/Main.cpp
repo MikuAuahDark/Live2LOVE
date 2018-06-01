@@ -29,6 +29,9 @@ extern "C" {
 #include "Live2LOVE.h"
 using namespace live2love;
 
+// Live2D Library
+#include "util/Json.h"
+
 // RefData
 #include "RefData.h"
 
@@ -209,6 +212,40 @@ int Live2LOVE_draw(lua_State *L)
 	return 0;
 }
 
+int Live2LOVE_getMeshCount(lua_State *L)
+{
+	Live2LOVE *l2l = *(Live2LOVE**)luaL_checkudata(L, 1, "Live2LOVE");
+	lua_pushinteger(L, l2l->meshData.size());
+	return 1;
+}
+
+int Live2LOVE_getMesh(lua_State *L)
+{
+	Live2LOVE *l2l = *(Live2LOVE**)luaL_checkudata(L, 1, "Live2LOVE");
+	size_t meshLen = l2l->meshData.size();
+	if (lua_isnumber(L, 2))
+	{
+		// Individual mesh
+		int index = luaL_checkinteger(L, 2);
+		if (index <= 0 || index > meshLen) luaL_argerror(L, 2, "Index out of range");
+
+		RefData::getRef(L, l2l->meshData[index - 1]->meshRefID);
+	}
+	else
+	{
+		// All mesh in a table
+		int i = 0;
+		lua_createtable(L, meshLen, 0);
+		for (auto x: l2l->meshData)
+		{
+			lua_pushinteger(L, ++i);
+			RefData::getRef(L, x->meshRefID);
+			lua_rawset(L, -3);
+		}
+	}
+	return 1;
+}
+
 int Live2LOVE___gc(lua_State *L)
 {
 	Live2LOVE **x = (Live2LOVE**)luaL_checkudata(L, 1, "Live2LOVE");
@@ -225,6 +262,8 @@ static std::map<std::string, lua_CFunction> Live2LOVE_methods = {
 	{"loadExpression", Live2LOVE_loadExpression},
 	{"loadPhysics", Live2LOVE_loadPhysics},
 	{"getParamValue", Live2LOVE_getParamValue},
+	{"getMesh", Live2LOVE_getMesh},
+	{"getMeshCount", Live2LOVE_getMeshCount},
 	{"update", Live2LOVE_update},
 	{"draw", Live2LOVE_draw},
 	{"__gc", Live2LOVE___gc}
@@ -247,6 +286,39 @@ int Live2LOVE_Live2LOVE(lua_State *L)
 	lua_setmetatable(L, -2);
 	// Return Live2LOVE object
 	return 1;
+}
+
+// Defined in Live2LOVE.cpp
+extern void *loadFileData(lua_State *L, const std::string& path, size_t *fileSize);
+// Load model file (full)
+int Live2LOVE_Live2LOVE_full(lua_State *L)
+{
+	size_t fileLen, dataSize;
+	const char *file = luaL_checklstring(L, 1, &fileLen);
+	std::string filename = std::string(file, fileLen);
+	const void *data = loadFileData(L, filename, &dataSize);
+
+	// Parse JSON
+	live2d::Json *json = live2d::Json::parseFromBytes((const char*)data, dataSize);
+	if (json == nullptr) luaL_error(L, "Cannot parse model definition");
+	if (json->getRoot()["model"].isNull())
+	{
+		delete json;
+		luaL_error(L, "Missing 'model' from model definition");
+	}
+
+	// Get dir path
+	std::string dir;
+	{
+		size_t last = filename.rfind('/');
+		if (last == std::string::npos)
+			dir = std::string("");
+		else
+			dir = filename.substr(0, last + 1);
+	}
+
+
+	return 0;
 }
 
 extern "C" int LUALIB_API luaopen_Live2LOVE(lua_State *L)
@@ -295,13 +367,33 @@ extern "C" int LUALIB_API luaopen_Live2LOVE(lua_State *L)
 	// Get love.graphics.newMesh
 	lua_getfield(L, -1, "newMesh");
 	RefData::setRef(L, "love.graphics.newMesh", -1);
+	lua_pop(L, 1);
+	lua_getfield(L, -1, "setBlendMode");
+	RefData::setRef(L, "love.graphics.setBlendMode", -1);
+	lua_pop(L, 1);
+	lua_getfield(L, -1, "getBlendMode");
+	RefData::setRef(L, "love.graphics.getBlendMode", -1);
 	lua_pop(L, 2); // pop the function and the graphics table
 
 	// Setup newFileData
 	lua_getfield(L, -1, "filesystem"); // assume it's always available
 	lua_getfield(L, -1, "newFileData");
 	RefData::setRef(L, "love.filesystem.newFileData", -1);
-	lua_pop(L, 3); // pop newFileData, filesystem, and love
+	lua_pop(L, 2); // pop newFileData and filesystem
+
+	// Setup newByteData
+	lua_getfield(L, -1, "data");
+	if (lua_isnil(L, -1))
+	{
+		// Hmm, it's not loaded by user. Use "require"
+		lua_pop(L, 1);
+		lua_getglobal(L, "require");
+		lua_pushstring(L, "love.data");
+		lua_call(L, 1, 1);
+	}
+	lua_getfield(L, -1, "newByteData");
+	RefData::setRef(L, "love.data.newByteData", -1);
+	lua_pop(L, 3); // pop newByteData, love.data, and love table itself
 
 	// Export table
 	lua_createtable(L, 0, 0);

@@ -49,7 +49,6 @@ void RefData::getRef(lua_State *L, int refID)
 
 void RefData::getRef(lua_State *L, const std::string& name)
 {
-	int refID;
 	if (namedRef.find(name) == namedRef.end())
 		lua_pushnil(L);
 	else
