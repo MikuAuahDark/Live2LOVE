@@ -1,0 +1,131 @@
+/**
+ * Copyright (c) 2039 Dark Energy Processor Corporation
+ *
+ * This software is provided 'as-is', without any express or implied
+ * warranty.  In no event will the authors be held liable for any damages
+ * arising from the use of this software.
+ *
+ * Permission is granted to anyone to use this software for any purpose,
+ * including commercial applications, and to alter it and redistribute it
+ * freely, subject to the following restrictions:
+ *
+ * 1. The origin of this software must not be misrepresented; you must not
+ *    claim that you wrote the original software. If you use this software
+ *    in a product, an acknowledgment in the product documentation would be
+ *    appreciated but is not required.
+ * 2. Altered source versions must be plainly marked as such, and must not be
+ *    misrepresented as being the original software.
+ * 3. This notice may not be removed or altered from any source distribution.
+ **/
+
+// STL
+#include <exception>
+#include <map>
+#include <string>
+#include <vector>
+
+// Lua
+extern "C" {
+#include <lua.h>
+#include <lauxlib.h>
+}
+
+// Live2D Library
+#include "Live2D.h"
+#include "draw/DDTexture.h"
+#include "motion/Live2DMotion.h"
+#include "type/LDPointF.h"
+#if defined(WIN32)
+#	include "Live2DModelWinGL.h"
+#	define L2L_WIN
+	typedef live2d::Live2DModelWinGL Live2DModel;
+#elif defined(__ANDROID__)
+#	include "Live2DModelAndroidES2.h"
+#	define L2L_ANDROID
+	typedef live2d::Live2DModelAndroidES2 Live2DModel;
+#elif defined(__APPLE__)
+#	include "TargetConditionals.h"
+#	if defined(TARGET_IPHONE_SIMULATOR) || defined(TARGET_OS_IPHONE)
+#		include "Live2DModelIPhoneES2.h"
+#		define L2L_IOS
+		typedef live2d::Live2DModelIPhoneES2 Live2DModel;
+#	endif
+#else
+#	error "Platform is not supported by Live2D"
+#endif
+
+// Live2D Framework
+#include "L2DPhysics.h"
+#include "L2DPose.h"
+#include "L2DModelMatrix.h"
+#include "L2DMotionManager.h"
+#include "L2DEyeBlink.h"
+#include "L2DMotionManager.h"
+#include "L2DExpressionMotion.h"
+#include "L2DTargetPoint.h"
+#include "L2DTextureDesc.h"
+
+namespace live2love
+{
+	typedef std::runtime_error namedException;
+
+	// Live2LOVE mesh object
+	struct Live2LOVEMesh
+	{
+		// Associated DDTexture
+		live2d::DDTexture *drawData;
+		// Draw data index
+		int drawDataIndex;
+		// Model context
+		live2d::ModelContext *modelContext;
+		// IDrawData context
+		live2d::IDrawContext *drawContext;
+		// Mesh object reference and mesh table reference
+		int meshRefID, tableRefID;
+	};
+
+	// Live2LOVE model object
+	struct Live2LOVE
+	{
+		// This is pretty much self-explanatory
+		Live2DModel *model;
+		live2d::framework::L2DMotionManager* motion;
+		live2d::framework::L2DMotionManager* expression;
+		live2d::framework::L2DEyeBlink* eyeBlink;
+		live2d::framework::L2DModelMatrix* modelMatrix;
+		live2d::framework::L2DPhysics* physics;
+		live2d::framework::L2DPose* pose;
+		// Mesh data list
+		std::vector<Live2LOVEMesh*> meshData;
+		// List of motions (movement)
+		std::map<std::string, live2d::AMotion*> motionList;
+		// List of expressions
+		std::map<std::string, live2d::AMotion*> expressionList;
+		// Lua state
+		lua_State *L;
+
+		// Create new Live2LOVE object. Only load moc file
+		Live2LOVE(lua_State *L, const std::string& path);
+		~Live2LOVE();
+		// Update model
+		void update(double deltaT);
+		// Draw model using LOVE renderer
+		void draw(
+			double x = 0, double y = 0, double r = 0,
+			double sx = 0, double sy = 0,
+			double ox = 0, double oy = 0,
+			double kx = 0, double ky = 0
+		);
+		// Set texture to user-supplied LOVE Texture
+		void setTexture(int live2dtexno, int loveimageidx);
+		// Load motion file
+		void loadMotion(const std::string& name, const std::string& path);
+		// Load physics
+		void loadPhysics(const std::string& path);
+		// Load expression
+		void loadExpression(const std::string& name, const std::string& path);
+
+	private:
+		void setupMeshData();
+	};
+}

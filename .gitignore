@@ -1,0 +1,9 @@
+include/live2d
+lib/Win32/Debug/live2d_opengl.lib
+lib/Win32/Debug/live2d_opengl_x64.lib
+lib/Win32/Release/live2d_opengl.lib
+lib/Win32/Release/live2d_opengl_x64.lib
+sln/*
+!sln/Live2LOVE.sln
+!sln/Live2LOVE.vcxproj
+!sln/Live2LOVE.vcxproj.filters
