@@ -3,7 +3,8 @@ lib/Win32/Debug/live2d_opengl.lib
 lib/Win32/Debug/live2d_opengl_x64.lib
 lib/Win32/Release/live2d_opengl.lib
 lib/Win32/Release/live2d_opengl_x64.lib
-sln/*
+sln/**
+!sln/Live2LOVE
 !sln/Live2LOVE.sln
-!sln/Live2LOVE.vcxproj
-!sln/Live2LOVE.vcxproj.filters
+!sln/Live2LOVE/Live2LOVE.vcxproj
+!sln/Live2LOVE/Live2LOVE.vcxproj.filters
