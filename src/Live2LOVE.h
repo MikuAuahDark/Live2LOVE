@@ -18,6 +18,9 @@
  * 3. This notice may not be removed or altered from any source distribution.
  **/
 
+#ifndef _L2L_LIVE2LOVE_
+#define _L2L_LIVE2LOVE
+
 // STL
 #include <exception>
 #include <map>
@@ -92,9 +95,7 @@ namespace live2love
 		live2d::framework::L2DMotionManager* motion;
 		live2d::framework::L2DMotionManager* expression;
 		live2d::framework::L2DEyeBlink* eyeBlink;
-		live2d::framework::L2DModelMatrix* modelMatrix;
 		live2d::framework::L2DPhysics* physics;
-		live2d::framework::L2DPose* pose;
 		// Mesh data list
 		std::vector<Live2LOVEMesh*> meshData;
 		// List of motions (movement)
@@ -103,11 +104,17 @@ namespace live2love
 		std::map<std::string, live2d::AMotion*> expressionList;
 		// Lua state
 		lua_State *L;
+		// Elapsed time. Modulated by 31536000.0 (1 year)
+		double elapsedTime;
+		// Enable movement animation
+		bool movementAnimation;
+		// Loop motion name
+		std::string motionLoop;
 
 		// Create new Live2LOVE object. Only load moc file
 		Live2LOVE(lua_State *L, const std::string& path);
 		~Live2LOVE();
-		// Update model
+		// Update model. deltaT should be in seconds.
 		void update(double deltaT);
 		// Draw model using LOVE renderer
 		void draw(
@@ -118,14 +125,31 @@ namespace live2love
 		);
 		// Set texture to user-supplied LOVE Texture
 		void setTexture(int live2dtexno, int loveimageidx);
+		// Set parameter value
+		void setParamValue(const std::string& name, double value, double weight = 1);
+		// Add parameter value
+		void addParamValue(const std::string& name, double value, double weight = 1);
+		// Get parameter value. This value is updated after the model is updated.
+		double getParamValue(const std::string& name);
+		// Set motion. mode 0 = Just play. mode 1 = Loop. mode 2 = Preserve (no loop)
+		void setMotion(const std::string& name, int mode = 0);
+		// Set expression
+		void setExpression(const std::string& name);
 		// Load motion file
-		void loadMotion(const std::string& name, const std::string& path);
+		void loadMotion(const std::string& name, const std::pair<double, double>& fade, const std::string& path);
 		// Load physics
 		void loadPhysics(const std::string& path);
 		// Load expression
 		void loadExpression(const std::string& name, const std::string& path);
 
 	private:
+		// Mesh data initialization
 		void setupMeshData();
+		// Expression initialize
+		void initializeExpression();
+		// Motion initializaiton
+		void initializeMotion();
 	};
 }
+
+#endif

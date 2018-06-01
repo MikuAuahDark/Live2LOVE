@@ -13,10 +13,28 @@
       <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
       <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
     </Filter>
+    <Filter Include="Source Files\Live2DFramework">
+      <UniqueIdentifier>{28ee1fa4-9c85-44f7-afb6-ddcd688df6dd}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="..\..\src\RefData.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\Live2LOVE.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="..\..\src\Main.cpp">
       <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\framework\L2DPhysics.cpp">
+      <Filter>Source Files\Live2DFramework</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\framework\L2DMotionManager.cpp">
+      <Filter>Source Files\Live2DFramework</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\framework\L2DExpressionMotion.cpp">
+      <Filter>Source Files\Live2DFramework</Filter>
     </ClCompile>
   </ItemGroup>
 </Project>

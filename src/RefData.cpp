@@ -23,8 +23,10 @@
 #include <string>
 
 // Lua
+extern "C" {
 #include <lua.h>
 #include <lauxlib.h>
+}
 
 // RefData
 #include "RefData.h"

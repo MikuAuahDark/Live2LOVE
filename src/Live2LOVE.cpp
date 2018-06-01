@@ -18,19 +18,23 @@
  * 3. This notice may not be removed or altered from any source distribution.
  **/
 
+// std
+#include <cmath>
+
 // STL
 #include <algorithm>
 #include <functional>
 #include <exception>
 #include <map>
+#include <new>
 #include <string>
 #include <vector>
 
 // Lua
 extern "C" {
-#include "lua.h"
-#include "lualib.h"
-#include "lauxlib.h"
+#include <lua.h>
+#include <lualib.h>
+#include <lauxlib.h>
 }
 
 // Live2LOVE
@@ -42,7 +46,9 @@ extern "C" {
 // Sort operator, for std::sort
 static bool compareDrawOrder(const live2love::Live2LOVEMesh *a, const live2love::Live2LOVEMesh *b)
 {
-	return a->drawData->getDrawOrder(*a->modelContext, a->drawContext) < b->drawData->getDrawOrder(*b->modelContext, b->drawContext);
+	int da = a->drawData->getDrawOrder(*a->modelContext, a->drawContext);
+	int db = b->drawData->getDrawOrder(*b->modelContext, b->drawContext);
+	return da < db;
 }
 
 // Push the FileData into stack. fileSize must not be NULL
@@ -86,6 +92,12 @@ static const void *loadFileData(lua_State *L, const std::string& path, size_t *f
 
 live2love::Live2LOVE::Live2LOVE(lua_State *L, const std::string& path)
 : L(L)
+, motionLoop("")
+, elapsedTime(0.0)
+, movementAnimation(true)
+, motion(nullptr)
+, expression(nullptr)
+, physics(nullptr)
 {
 	size_t modelSize;
 	const void *modelData = loadFileData(L, path, &modelSize);
@@ -194,8 +206,28 @@ void live2love::Live2LOVE::setupMeshData()
 	}
 }
 
-void live2love::Live2LOVE::update(double )
+void live2love::Live2LOVE::update(double dT)
 {
+	elapsedTime = fmod((elapsedTime + dT), 31536000.0);
+	double t = elapsedTime * 2 * M_PI;
+	// Motion update
+	if (motion)
+	{
+		if (motion->isFinished() && motionLoop.length() > 0)
+			// Revert
+			motion->startMotion(motionList[motionLoop], false);
+
+		motion->updateParam(model);
+	}
+	// Expression update
+	if (expression) expression->updateParam(model);
+	// Movement update
+	if (movementAnimation)
+	{
+		model->setParamFloat("PARAM_BREATH", 0.5 + 0.5 * sin(t / 3.2345), 1.0); // Override user-set value
+	}
+	// Physics update
+	if (physics) physics->updateParam(model);
 	// Update model
 	model->update();
 	// Update mesh data
@@ -209,7 +241,7 @@ void live2love::Live2LOVE::update(double )
 		// Get table mesh ref
 		RefData::getRef(L, mesh->tableRefID);
 		int polygonCount, meshLen;
-		int opacity = mesh->drawData->getOpacity(*mesh->modelContext, mesh->drawContext);
+		double opacity = mesh->drawData->getOpacity(*mesh->modelContext, mesh->drawContext);
 		l2d_index *vertexMap = mesh->drawData->getIndexArray(&polygonCount);
 		l2d_pointf *points = model->getTransformedPoints(mesh->drawDataIndex, &meshLen);
 		meshLen = polygonCount * 3;
@@ -277,16 +309,67 @@ void live2love::Live2LOVE::setTexture(int live2dtexno, int loveimageidx)
 	}
 }
 
-void live2love::Live2LOVE::loadMotion(const std::string& name, const std::string& path)
+void live2love::Live2LOVE::setParamValue(const std::string& name, double value, double weight)
 {
+	model->setParamFloat(name.c_str(), value, weight);
+}
+
+void live2love::Live2LOVE::addParamValue(const std::string& name, double value, double weight)
+{
+	model->addToParamFloat(name.c_str(), value, weight);
+}
+
+double live2love::Live2LOVE::getParamValue(const std::string& name)
+{
+	return model->getParamFloat(name.c_str());
+}
+
+void live2love::Live2LOVE::setMotion(const std::string& name, int mode)
+{
+	// No motion? well load one first before using this.
+	if (!motion) throw namedException("No motion loaded!");
+	if (motionList.find(name) == motionList.end()) throw namedException("Motion not found");
+	motion->startMotion(motionList[name], false);
+
+	// Check motion mode
+	if (mode == 1) motionLoop = name;
+	else if (mode == 2) motionLoop = "";
+}
+
+void live2love::Live2LOVE::setExpression(const std::string& name)
+{
+	// No expression? Load one first!
+	if (!expression) throw namedException("No expression loaded!");
+	if (expressionList.find(name) == expressionList.end()) throw namedException("Expression not found");
+	expression->startMotion(expressionList[name], false);
+}
+
+void live2love::Live2LOVE::loadMotion(const std::string& name, const std::pair<double, double>& fade, const std::string& path)
+{
+	initializeMotion();
 	// Load file
 	size_t motionSize;
 	const void *motionData = loadFileData(L, path, &motionSize);
 	live2d::AMotion *motion = live2d::Live2DMotion::loadMotion(motionData, motionSize);
+	motion->setFadeIn(fade.first);
+	motion->setFadeOut(fade.second);
 	// Remove FileData
 	lua_pop(L, 1);
 	// Set motion
+	if (motionList.find(name) != motionList.end()) delete motionList[name];
 	motionList[name] = motion;
+}
+
+void live2love::Live2LOVE::loadExpression(const std::string& name, const std::string& path)
+{
+	initializeExpression();
+	// Load file
+	size_t exprSize;
+	const void *exprData = loadFileData(L, path, &exprSize);
+	live2d::framework::L2DExpressionMotion *expr = live2d::framework::L2DExpressionMotion::loadJson(exprData, exprSize);
+	// Set expression
+	if (expressionList.find(name) != expressionList.end()) delete expressionList[name];
+	expressionList[name] = expr;
 }
 
 void live2love::Live2LOVE::loadPhysics(const std::string& path)
@@ -295,4 +378,14 @@ void live2love::Live2LOVE::loadPhysics(const std::string& path)
 	size_t physicsSize;
 	const void *physicsData = loadFileData(L, path, &physicsSize);
 	physics = live2d::framework::L2DPhysics::load(physicsData, physicsSize);
+}
+
+inline void live2love::Live2LOVE::initializeMotion()
+{
+	if (!motion) motion = new live2d::framework::L2DMotionManager();
+}
+
+inline void live2love::Live2LOVE::initializeExpression()
+{
+	if (!expression) expression = new live2d::framework::L2DMotionManager();
 }

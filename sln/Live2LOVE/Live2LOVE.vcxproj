@@ -19,7 +19,12 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="..\..\framework\L2DExpressionMotion.cpp" />
+    <ClCompile Include="..\..\framework\L2DMotionManager.cpp" />
+    <ClCompile Include="..\..\framework\L2DPhysics.cpp" />
+    <ClCompile Include="..\..\src\Live2LOVE.cpp" />
     <ClCompile Include="..\..\src\Main.cpp" />
+    <ClCompile Include="..\..\src\RefData.cpp" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>15.0</VCProjectVersion>
@@ -90,7 +95,7 @@
       <WarningLevel>Level3</WarningLevel>
       <Optimization>Disabled</Optimization>
       <PreprocessorDefinitions>L2D_TARGET_WIN_GL;LUA_BUILD_AS_DLL;LUA_LIB;WIN32;_DEBUG;LIVE2LOVE_EXPORTS;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>$(SolutionDir)..\include\live2d;$(SolutionDir)..\include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)..\include\live2d;$(SolutionDir)..\include;$(SolutionDir)..\framework</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <GenerateDebugInformation>true</GenerateDebugInformation>
@@ -104,7 +109,7 @@
       <WarningLevel>Level3</WarningLevel>
       <Optimization>Disabled</Optimization>
       <PreprocessorDefinitions>L2D_TARGET_WIN_GL;LUA_BUILD_AS_DLL;LUA_LIB;WIN32;_DEBUG;LIVE2LOVE_EXPORTS;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>$(SolutionDir)..\include\live2d;$(SolutionDir)..\include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)..\include\live2d;$(SolutionDir)..\include;$(SolutionDir)..\framework</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <GenerateDebugInformation>true</GenerateDebugInformation>
@@ -123,7 +128,7 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <PreprocessorDefinitions>L2D_TARGET_WIN_GL;LUA_BUILD_AS_DLL;LUA_LIB;WIN32;NDEBUG;LIVE2LOVE_EXPORTS;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>$(SolutionDir)..\include\live2d;$(SolutionDir)..\include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)..\include\live2d;$(SolutionDir)..\include;$(SolutionDir)..\framework</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
@@ -141,7 +146,7 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <PreprocessorDefinitions>L2D_TARGET_WIN_GL;LUA_BUILD_AS_DLL;LUA_LIB;WIN32;NDEBUG;LIVE2LOVE_EXPORTS;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>$(SolutionDir)..\include\live2d;$(SolutionDir)..\include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)..\include\live2d;$(SolutionDir)..\include;$(SolutionDir)..\framework</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
