@@ -36,5 +36,8 @@
     <ClCompile Include="..\..\framework\L2DExpressionMotion.cpp">
       <Filter>Source Files\Live2DFramework</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\framework\L2DEyeBlink.cpp">
+      <Filter>Source Files\Live2DFramework</Filter>
+    </ClCompile>
   </ItemGroup>
 </Project>

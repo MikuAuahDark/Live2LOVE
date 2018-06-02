@@ -133,12 +133,24 @@ namespace live2love
 		);
 		// Set texture to user-supplied LOVE Texture
 		void setTexture(int live2dtexno, int loveimageidx);
+		// Disable/enable animation movement (eyeblink, stationary movement thing)
+		void setAnimationMovement(bool anim);
 		// Set parameter value
 		void setParamValue(const std::string& name, double value, double weight = 1);
 		// Add parameter value
 		void addParamValue(const std::string& name, double value, double weight = 1);
+		// Multiply parameter value
+		void mulParamValue(const std::string& name, double value, double weight = 1);
 		// Get parameter value. This value is updated after the model is updated.
 		double getParamValue(const std::string& name);
+		// Get animation movement status
+		bool getAnimationMovement() const;
+		// Get list of expression names
+		std::vector<const std::string*> getExpressionList();
+		// Get list of motion names
+		std::vector<const std::string*> getMotionList();
+		// Get model canvas dimensions
+		std::pair<float, float> getDimensions();
 		// Set motion. mode 0 = Just play. mode 1 = Loop. mode 2 = Preserve (no loop)
 		void setMotion(const std::string& name, int mode = 0);
 		// Set expression

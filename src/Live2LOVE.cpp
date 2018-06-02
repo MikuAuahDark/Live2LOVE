@@ -55,7 +55,7 @@ static bool compareDrawOrder(const live2love::Live2LOVEMesh *a, const live2love:
 }
 
 // Push the FileData into stack. fileSize must not be NULL
-void *loadFileData(lua_State *L, const std::string& path, size_t *fileSize)
+const void *loadFileData(lua_State *L, const std::string& path, size_t *fileSize)
 {
 	// New file data
 	RefData::getRef(L, "love.filesystem.newFileData");
@@ -120,6 +120,7 @@ live2love::Live2LOVE::Live2LOVE(lua_State *L, const std::string& path)
 , motion(nullptr)
 , expression(nullptr)
 , physics(nullptr)
+, eyeBlink(nullptr)
 {
 	size_t modelSize;
 	const void *modelData = loadFileData(L, path, &modelSize);
@@ -127,6 +128,7 @@ live2love::Live2LOVE::Live2LOVE(lua_State *L, const std::string& path)
 	model = Live2DModel::loadModel(modelData, modelSize);
 	if (model == nullptr) throw namedException("Failed to load model");
 
+	eyeBlink = new live2d::framework::L2DEyeBlink();
 	model->setPremultipliedAlpha(false);
 	model->update();
 	// Pop the FileData
@@ -152,6 +154,7 @@ live2love::Live2LOVE::~Live2LOVE()
 	for (auto& x: expressionList)
 		delete x.second;
 
+	delete eyeBlink;
 	// Delete physics
 	delete physics;
 	// Delete model
@@ -238,7 +241,10 @@ void live2love::Live2LOVE::update(double dT)
 			// Revert
 			motion->startMotion(motionList[motionLoop], false);
 
-		motion->updateParam(model);
+		if (!motion->updateParam(model) && movementAnimation && eyeBlink)
+			// Update eye blink
+			eyeBlink->setParam(model);
+
 		model->saveParam();
 	}
 	// Expression update
@@ -246,10 +252,14 @@ void live2love::Live2LOVE::update(double dT)
 	// Movement update
 	if (movementAnimation)
 	{
+		model->addToParamFloat("PARAM_ANGLE_X", 15.0 * sin(t / 6.5345), 0.5);
+		model->addToParamFloat("PARAM_ANGLE_Y", 8.0 * sin(t / 3.5345), 0.5);
+		model->addToParamFloat("PARAM_ANGLE_Z", 10.0 * sin(t / 5.5345), 0.5);
+		model->addToParamFloat("PARAM_BODY_ANGLE_X", 4.0 * sin(t / 15.5345), 0.5);
 		model->setParamFloat("PARAM_BREATH", 0.5 + 0.5 * sin(t / 3.2345), 1.0); // Override user-set value
+		// Physics update
+		if (physics) physics->updateParam(model);
 	}
-	// Physics update
-	if (physics) physics->updateParam(model);
 	// Update model
 	model->update();
 	// Update mesh data
@@ -290,7 +300,9 @@ void live2love::Live2LOVE::update(double dT)
 
 void live2love::Live2LOVE::draw(double x, double y, double r, double sx, double sy, double ox, double oy, double kx, double ky)
 {
-	lua_checkstack(L, lua_gettop(L) + 15);
+	if (!lua_checkstack(L, lua_gettop(L) + 15))
+		throw namedException("Internal error: cannot grow Lua stack size");
+
 	// Save blending
 	RefData::getRef(L, "love.graphics.setBlendMode");
 	RefData::getRef(L, "love.graphics.getBlendMode");
@@ -333,7 +345,7 @@ void live2love::Live2LOVE::draw(double x, double y, double r, double sx, double 
 				{
 					// Multiply bnending (multiply,premultiplied)
 					lua_pushstring(L, "multiply");
-					lua_pushstring(L, "alphamultiply");
+					lua_pushstring(L, "premultiplied");
 					break;
 				}
 			}
@@ -379,6 +391,16 @@ void live2love::Live2LOVE::setTexture(int live2dtexno, int loveimageidx)
 	}
 }
 
+void live2love::Live2LOVE::setAnimationMovement(bool a)
+{
+	movementAnimation = a;
+}
+
+bool live2love::Live2LOVE::getAnimationMovement() const
+{
+	return movementAnimation;
+}
+
 void live2love::Live2LOVE::setParamValue(const std::string& name, double value, double weight)
 {
 	model->setParamFloat(name.c_str(), value, weight);
@@ -389,9 +411,39 @@ void live2love::Live2LOVE::addParamValue(const std::string& name, double value, 
 	model->addToParamFloat(name.c_str(), value, weight);
 }
 
+void live2love::Live2LOVE::mulParamValue(const std::string& name, double value, double weight)
+{
+	model->multParamFloat(name.c_str(), value, weight);
+}
+
 double live2love::Live2LOVE::getParamValue(const std::string& name)
 {
 	return model->getParamFloat(name.c_str());
+}
+
+std::vector<const std::string*> live2love::Live2LOVE::getExpressionList()
+{
+	std::vector<const std::string*> value = {};
+
+	for (auto& x: expressionList)
+		value.push_back(&x.first);
+
+	return value;
+}
+
+std::vector<const std::string*> live2love::Live2LOVE::getMotionList()
+{
+	std::vector<const std::string*> value = {};
+
+	for (auto& x: motionList)
+		value.push_back(&x.first);
+
+	return value;
+}
+
+std::pair<float, float> live2love::Live2LOVE::getDimensions()
+{
+	return std::pair<float, float>(model->getCanvasWidth(), model->getCanvasHeight());
 }
 
 void live2love::Live2LOVE::setMotion(const std::string& name, int mode)

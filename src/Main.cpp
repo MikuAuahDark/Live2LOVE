@@ -83,6 +83,23 @@ int Live2LOVE_addParamValue(lua_State *L)
 	return 0;
 }
 
+// Copypaste from Live2LOVE_setParamValue
+int Live2LOVE_mulParamValue(lua_State *L)
+{
+	// Get udata
+	Live2LOVE *l2l = *(Live2LOVE**)luaL_checkudata(L, 1, "Live2LOVE");
+	// Get param name
+	size_t nameLen; const char *name = luaL_checklstring(L, 2, &nameLen);
+	// Get value
+	double value = luaL_checknumber(L, 3);
+	// Get weight
+	double weight = luaL_optnumber(L, 4, 1.0);
+	// Call
+	L2L_TRYWRAP(l2l->mulParamValue(std::string(name, nameLen), value, weight););
+
+	return 0;
+}
+
 int Live2LOVE_getParamValue(lua_State *L)
 {
 	// Get udata
@@ -126,6 +143,14 @@ int Live2LOVE_setMotion(lua_State *L)
 	// Call
 	L2L_TRYWRAP(l2l->setMotion(std::string(motionName, motionNameLen), mode););
 
+	return 0;
+}
+
+int Live2LOVE_setAnimationMovement(lua_State *L)
+{
+	Live2LOVE *l2l = *(Live2LOVE**)luaL_checkudata(L, 1, "Live2LOVE");
+	luaL_checktype(L, 2, LUA_TBOOLEAN);
+	l2l->setAnimationMovement(lua_toboolean(L, 2));
 	return 0;
 }
 
@@ -246,16 +271,86 @@ int Live2LOVE_getMesh(lua_State *L)
 	return 1;
 }
 
+int Live2LOVE_getDimensions(lua_State *L)
+{
+	Live2LOVE *l2l = *(Live2LOVE**)luaL_checkudata(L, 1, "Live2LOVE");
+	std::pair<float, float>& dim = l2l->getDimensions();
+	lua_pushnumber(L, dim.first);
+	lua_pushnumber(L, dim.second);
+	return 2;
+}
+
+int Live2LOVE_getWidth(lua_State *L)
+{
+	Live2LOVE *l2l = *(Live2LOVE**)luaL_checkudata(L, 1, "Live2LOVE");
+	std::pair<float, float>& dim = l2l->getDimensions();
+	lua_pushnumber(L, dim.first);
+	return 1;
+}
+
+int Live2LOVE_getHeight(lua_State *L)
+{
+	Live2LOVE *l2l = *(Live2LOVE**)luaL_checkudata(L, 1, "Live2LOVE");
+	std::pair<float, float>& dim = l2l->getDimensions();
+	lua_pushnumber(L, dim.second);
+	return 1;
+}
+
+int Live2LOVE_getExpressionList(lua_State *L)
+{
+	Live2LOVE *l2l = *(Live2LOVE**)luaL_checkudata(L, 1, "Live2LOVE");
+	lua_createtable(L, l2l->expressionList.size(), 0);
+	
+	int i = 0;
+	for (auto& x: l2l->getExpressionList())
+	{
+		lua_pushlstring(L, x->c_str(), x->length());
+		lua_rawseti(L, -2, ++i);
+	}
+	return 1;
+}
+
+int Live2LOVE_getMotionList(lua_State *L)
+{
+	Live2LOVE *l2l = *(Live2LOVE**)luaL_checkudata(L, 1, "Live2LOVE");
+	lua_createtable(L, l2l->motionList.size(), 0);
+	
+	int i = 0;
+	for (auto& x: l2l->getMotionList())
+	{
+		lua_pushlstring(L, x->c_str(), x->length());
+		lua_rawseti(L, -2, ++i);
+	}
+	return 1;
+}
+
+int Live2LOVE_getAnimationMovement(lua_State *L)
+{
+	Live2LOVE *l2l = *(Live2LOVE**)luaL_checkudata(L, 1, "Live2LOVE");
+	lua_pushboolean(L, l2l->getAnimationMovement());
+	return 1;
+}
+
 int Live2LOVE___gc(lua_State *L)
 {
-	Live2LOVE **x = (Live2LOVE**)luaL_checkudata(L, 1, "Live2LOVE");
-	delete *x;
+	Live2LOVE *x = *(Live2LOVE**)luaL_checkudata(L, 1, "Live2LOVE");
+	delete x;
 	return 0;
 }
 
-static std::map<std::string, lua_CFunction> Live2LOVE_methods = {
+int Live2LOVE___tostring(lua_State *L)
+{
+	Live2LOVE *x = *(Live2LOVE**)luaL_checkudata(L, 1, "Live2LOVE");
+	lua_pushfstring(L, "Live2LOVE Model: %p", x);
+	return 1;
+}
+
+static luaL_Reg Live2LOVE_methods[] = {
 	{"setTexture", Live2LOVE_setTexture},
+	{"setAnimationMovement", Live2LOVE_setAnimationMovement},
 	{"setParamValue", Live2LOVE_setParamValue},
+	{"addParamValue", Live2LOVE_addParamValue},
+	{"mulParamValue", Live2LOVE_mulParamValue},
 	{"setMotion", Live2LOVE_setMotion},
 	{"setExpression", Live2LOVE_setExpression},
 	{"loadMotion", Live2LOVE_loadMotion},
@@ -264,12 +359,17 @@ static std::map<std::string, lua_CFunction> Live2LOVE_methods = {
 	{"getParamValue", Live2LOVE_getParamValue},
 	{"getMesh", Live2LOVE_getMesh},
 	{"getMeshCount", Live2LOVE_getMeshCount},
+	{"getExpressionList", Live2LOVE_getExpressionList},
+	{"getMotionList", Live2LOVE_getMotionList},
+	{"getWidth", Live2LOVE_getWidth},
+	{"getHeight", Live2LOVE_getHeight},
+	{"getDimensions", Live2LOVE_getDimensions},
+	{"getAnimationMovement", Live2LOVE_getAnimationMovement},
 	{"update", Live2LOVE_update},
-	{"draw", Live2LOVE_draw},
-	{"__gc", Live2LOVE___gc}
+	{"draw", Live2LOVE_draw}
 };
 
-// Load moc file (constructor)
+// Load model file (basic)
 int Live2LOVE_Live2LOVE(lua_State *L)
 {
 	size_t pathSize;
@@ -289,10 +389,12 @@ int Live2LOVE_Live2LOVE(lua_State *L)
 }
 
 // Defined in Live2LOVE.cpp
-extern void *loadFileData(lua_State *L, const std::string& path, size_t *fileSize);
+extern const void *loadFileData(lua_State *L, const std::string& path, size_t *fileSize);
 // Load model file (full)
 int Live2LOVE_Live2LOVE_full(lua_State *L)
 {
+	// Checkstack
+	luaL_checkstack(L, lua_gettop(L) + 24, "Internal error: cannot grow Lua stack size");
 	size_t fileLen, dataSize;
 	const char *file = luaL_checklstring(L, 1, &fileLen);
 	std::string filename = std::string(file, fileLen);
@@ -301,24 +403,138 @@ int Live2LOVE_Live2LOVE_full(lua_State *L)
 	// Parse JSON
 	live2d::Json *json = live2d::Json::parseFromBytes((const char*)data, dataSize);
 	if (json == nullptr) luaL_error(L, "Cannot parse model definition");
-	if (json->getRoot()["model"].isNull())
+	live2d::Value& root = json->getRoot();
+	if (root["model"].isNull())
 	{
 		delete json;
 		luaL_error(L, "Missing 'model' from model definition");
 	}
 
 	// Get dir path
-	std::string dir;
+	std::string dir = "";
 	{
 		size_t last = filename.rfind('/');
-		if (last == std::string::npos)
-			dir = std::string("");
-		else
+		if (last != std::string::npos)
 			dir = filename.substr(0, last + 1);
 	}
 
+	// Load model file
+	Live2LOVE *l2l = new Live2LOVE(L, dir + root["model"].toString().c_str());
 
-	return 0;
+	// Textures
+	if (!root["textures"].isNull())
+	{
+		// New image
+		RefData::getRef(L, "love.graphics.newImage");
+		// Settings. Mipmap by default
+		lua_createtable(L, 0, 1);
+		lua_pushboolean(L, 1);
+		lua_setfield(L, -2, "mipmaps");
+		for (int i = 0; i < root["textures"].size(); i++)
+		{
+			lua_pushvalue(L, -2);
+			std::string texPath = dir + root["textures"][i].toString().c_str();
+			// If no extension, provide one
+			if (texPath.substr(texPath.length() - 4, 4) != ".png")
+				texPath += ".png";
+			lua_pushlstring(L, texPath.c_str(), texPath.length());
+			lua_pushvalue(L, -3);
+			// love.graphics.newImage(texPath, {mipmaps = true})
+			lua_call(L, 2, 1);
+			l2l->setTexture(i + 1, lua_gettop(L));
+			lua_pop(L, 1);
+		}
+		lua_pop(L, 2);
+	}
+
+	// Must be in try-catch block
+	try
+	{
+		// Expressions
+		if (!root["expressions"].isNull())
+		{
+			std::string defaultExpr = "";
+			for (int i = 0; i < root["expressions"].size(); i++)
+			{
+				auto& v = root["expressions"][i];
+				if (defaultExpr.length() == 0)
+					defaultExpr = v["name"].toString().c_str();
+
+				// Load
+				l2l->loadExpression(v["name"].toString().c_str(), dir + v["file"].toString().c_str());
+			}
+			// Set as default
+			if (defaultExpr.length() > 0)
+				l2l->setExpression(defaultExpr);
+		}
+
+		// Motion
+		if (!root["motions"].isNull())
+		{
+			std::string idleMotion;
+			for (auto& x: root["motions"].getKeys())
+			{
+				std::string name = x.c_str();
+				auto& motionObject = root["motions"][name.c_str()];
+
+				if (idleMotion.length() == 0 && name.find("idle") == 0)
+					idleMotion = name;
+
+				if (motionObject.size() > 1)
+				{
+					// Load multiple motion
+					for (int j = 1; j <= motionObject.size(); j++)
+					{
+						std::string mName = name + ":" + std::to_string(j);
+						if (idleMotion.length() == 0 && mName.find("idle") == 0)
+							idleMotion = mName;
+
+						l2l->loadMotion(
+							mName,
+							std::pair<double, double>(
+								motionObject[j - 1]["fade_in"].toDouble(1000),
+								motionObject[j - 1]["fade_out"].toDouble(1000)
+							),
+							dir + motionObject[j - 1]["file"].toString().c_str()
+						);
+					}
+				}
+				else
+				{
+					if (idleMotion.length() == 0 && name.find("idle") == 0)
+						idleMotion = name;
+					// Load single motion.
+					l2l->loadMotion(
+						name,
+						std::pair<double, double>(
+							motionObject[0]["fade_in"].toDouble(1000),
+							motionObject[0]["fade_out"].toDouble(1000)
+						),
+						dir + motionObject[0]["file"].toString().c_str()
+					);
+				}
+			}
+
+			// Set default motion
+			if (idleMotion.length() > 0)
+				l2l->setMotion(idleMotion, 1);
+		}
+	}
+	catch (std::exception &e)
+	{
+		delete l2l;
+		delete json;
+		luaL_error(L, e.what());
+	}
+
+	// New user data
+	Live2LOVE **ptr = (Live2LOVE**)lua_newuserdata(L, sizeof(Live2LOVE*));
+	*ptr = l2l;
+	luaL_getmetatable(L, "Live2LOVE");
+	lua_setmetatable(L, -2);
+
+	// Return new object
+	return 1;
 }
 
 extern "C" int LUALIB_API luaopen_Live2LOVE(lua_State *L)
@@ -332,13 +548,19 @@ extern "C" int LUALIB_API luaopen_Live2LOVE(lua_State *L)
 	// Create new Live2LOVE metatable
 	luaL_newmetatable(L, "Live2LOVE");
 	// Setup function methods
+	lua_pushstring(L, "__gc");
+	lua_pushcfunction(L, Live2LOVE___gc);
+	lua_rawset(L, -3);
+	lua_pushstring(L, "__tostring");
+	lua_pushcfunction(L, Live2LOVE___tostring);
+	lua_rawset(L, -3);
 	lua_pushstring(L, "__index");
 	lua_createtable(L, 0, 0);
 	// Export methods
 	for (auto& x: Live2LOVE_methods)
 	{
-		lua_pushlstring(L, x.first.c_str(), x.first.length());
-		lua_pushcfunction(L, x.second);
+		lua_pushstring(L, x.name);
+		lua_pushcfunction(L, x.func);
 		lua_rawset(L, -3);
 	}
 	lua_rawset(L, -3); // For the Live2LOVE metatable. set __index to table
@@ -355,6 +577,12 @@ extern "C" int LUALIB_API luaopen_Live2LOVE(lua_State *L)
 	if (lua_isnil(L, -1))
 		luaL_error(L, "love module is not loaded!");
 
+	// Check love version
+	lua_getfield(L, -1, "_version_major");
+	if (lua_tointeger(L, -1) < 11)
+		luaL_error(L, "Live2LOVE requires at least LOVE 11.0");
+	lua_pop(L, 1); // pop _version_major
+
 	lua_getfield(L, -1, "graphics");
 	// Check if love.graphics module is loaded.
 	if (lua_isnil(L, -1))
@@ -364,7 +592,7 @@ extern "C" int LUALIB_API luaopen_Live2LOVE(lua_State *L)
 	lua_getfield(L, -1, "draw");
 	RefData::setRef(L, "love.graphics.draw", -1);
 	lua_pop(L, 1); // pop the function
-	// Get love.graphics.newMesh
+	// Get needed function
 	lua_getfield(L, -1, "newMesh");
 	RefData::setRef(L, "love.graphics.newMesh", -1);
 	lua_pop(L, 1);
@@ -373,6 +601,9 @@ extern "C" int LUALIB_API luaopen_Live2LOVE(lua_State *L)
 	lua_pop(L, 1);
 	lua_getfield(L, -1, "getBlendMode");
 	RefData::setRef(L, "love.graphics.getBlendMode", -1);
+	lua_pop(L, 1);
+	lua_getfield(L, -1, "newImage");
+	RefData::setRef(L, "love.graphics.newImage", -1);
 	lua_pop(L, 2); // pop the function and the graphics table
 
 	// Setup newFileData
@@ -400,8 +631,11 @@ extern "C" int LUALIB_API luaopen_Live2LOVE(lua_State *L)
 	lua_pushstring(L, "loadMocFile");
 	lua_pushcfunction(L, Live2LOVE_Live2LOVE);
 	lua_rawset(L, -3);
+	lua_pushstring(L, "loadModel");
+	lua_pushcfunction(L, Live2LOVE_Live2LOVE_full);
+	lua_rawset(L, -3);
 	lua_pushstring(L, "_VERSION");
-	lua_pushstring(L, "0.1.0");
+	lua_pushstring(L, "0.2.0");
 	lua_rawset(L, -3);
 	lua_pushstring(L, "Live2DVersion");
 	lua_pushstring(L, live2d::Live2D::getVersionStr());
