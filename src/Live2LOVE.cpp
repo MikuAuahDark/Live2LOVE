@@ -187,6 +187,13 @@ void live2love::Live2LOVE::setupMeshData()
 		mesh->drawContext = modelContext->getDrawContext(i);
 		mesh->modelContext = modelContext;
 		mesh->drawDataIndex = i;
+
+		// Check clip ID
+		if (ddtex->getClipIDList())
+			mesh->clipID = meshDataMap[ddtex->getClipIDList()->operator[](0)->toChar()];
+		else
+			mesh->clipID = nullptr;
+
 		// Create mesh table list
 		int numPoints;
 		int polygonCount;
@@ -226,6 +233,7 @@ void live2love::Live2LOVE::setupMeshData()
 
 		// Push to vector
 		meshData.push_back(mesh);
+		meshDataMap[ddtex->getDrawDataID()->toChar()] = mesh;
 	}
 }
 
@@ -263,7 +271,6 @@ void live2love::Live2LOVE::update(double dT)
 	// Update model
 	model->update();
 	// Update mesh data
-	volatile float debugOpacity = 2.0; // debug
 	for (auto mesh: meshData)
 	{
 		// Get mesh ref
@@ -300,7 +307,7 @@ void live2love::Live2LOVE::update(double dT)
 
 void live2love::Live2LOVE::draw(double x, double y, double r, double sx, double sy, double ox, double oy, double kx, double ky)
 {
-	if (!lua_checkstack(L, lua_gettop(L) + 15))
+	if (!lua_checkstack(L, lua_gettop(L) + 24))
 		throw namedException("Internal error: cannot grow Lua stack size");
 
 	// Save blending
@@ -318,6 +325,33 @@ void live2love::Live2LOVE::draw(double x, double y, double r, double sx, double 
 	// List mesh data
 	for (auto mesh: meshData)
 	{
+		bool stencilSet = false;
+		// If there's clip ID, draw stencil first.
+		if (mesh->clipID)
+		{
+			// Get stencil function
+			RefData::getRef(L, "love.graphics.setStencilTest");
+			RefData::getRef(L, "love.graphics.stencil");
+			// Push upvalues
+			lua_pushvalue(L, -3); // love.graphics.draw
+			RefData::getRef(L, mesh->clipID->meshRefID);
+			lua_pushnumber(L, x);
+			lua_pushnumber(L, y);
+			lua_pushnumber(L, r);
+			lua_pushnumber(L, sx);
+			lua_pushnumber(L, sy);
+			lua_pushnumber(L, ox);
+			lua_pushnumber(L, oy);
+			lua_pushnumber(L, kx);
+			lua_pushnumber(L, ky);
+			lua_pushcclosure(L, Live2LOVE::drawStencil, 11);
+			lua_call(L, 1, 0); // love.graphics.stencil
+			lua_pushvalue(L, -1);
+			lua_pushstring(L, "greater");
+			lua_pushnumber(L, 0);
+			lua_call(L, 2, 0); // love.graphics.setStencilTest
+			stencilSet = true;
+		}
 		int meshBlendMode = (mesh->drawData->getOptionFlag() >> 1) & 3;
 		if (meshBlendMode != blendMode)
 		{
@@ -352,7 +386,7 @@ void live2love::Live2LOVE::draw(double x, double y, double r, double sx, double 
 			// Call it
 			lua_call(L, 2, 0);
 		}
-		lua_pushvalue(L, -1);
+		lua_pushvalue(L, stencilSet ? -2 : -1);
 		RefData::getRef(L, mesh->meshRefID);
 		lua_pushnumber(L, x);
 		lua_pushnumber(L, y);
@@ -365,6 +399,10 @@ void live2love::Live2LOVE::draw(double x, double y, double r, double sx, double 
 		lua_pushnumber(L, ky);
 		// Draw
 		lua_call(L, 10, 0);
+
+		// If there's stencil, disable it.
+		if (stencilSet)
+			lua_call(L, 0, 0);
 	}
 
 	// Remove love.graphics.draw
@@ -515,4 +553,14 @@ inline void live2love::Live2LOVE::initializeMotion()
 inline void live2love::Live2LOVE::initializeExpression()
 {
 	if (!expression) expression = new live2d::framework::L2DMotionManager();
+}
+
+int live2love::Live2LOVE::drawStencil(lua_State *L)
+{
+	lua_checkstack(L, lua_gettop(L) + 12);
+	for (int i = 0; i < 11; i++)
+		lua_pushvalue(L, lua_upvalueindex(i + 1));
+	lua_call(L, 10, 0);
+
+	return 0;
 }

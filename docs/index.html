@@ -1,0 +1,344 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+   "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8"/>
+<head>
+    <title>Reference</title>
+    <link rel="stylesheet" href="ldoc.css" type="text/css" />
+</head>
+<body>
+
+<div id="container">
+
+<div id="product">
+	<div id="product_logo"></div>
+	<div id="product_name"><big><b></b></big></div>
+	<div id="product_description"></div>
+</div> <!-- id="product" -->
+
+
+<div id="main">
+
+
+<!-- Menu -->
+
+<div id="navigation">
+<br/>
+<h1>Live2LÖVE</h1>
+
+
+<h2>Contents</h2>
+<ul>
+<li><a href="#Functions">Functions</a></li>
+<li><a href="#Class_Live2LOVEModel">Class Live2LOVEModel </a></li>
+</ul>
+
+
+<h2>Modules</h2>
+<ul class="nowrap">
+  <li><strong>Live2LOVE</strong></li>
+</ul>
+<h2>Topics</h2>
+<ul class="">
+  <li><a href="topics/README.md.html">README</a></li>
+</ul>
+
+</div>
+
+<div id="content">
+
+<h1>Module <code>Live2LOVE</code></h1>
+<p>Live2LOVE is a LÖVE module to load and render Live2D models
+ which uses <a href="https://love2d.org/wiki/love.filesystem">love.filesystem</a> module to
+ load files, so it works even in fused mode.</p>
+<p> Live2LOVE uses <a href="https://love2d.org/wiki/love.graphics">love.graphics</a> to do the
+ whole rendering. This provides some advantages like you can apply transformation,
+ using Shader, render to Canvas, and more. At least LOVE 11.0 is required to use
+ this module!</p>
+
+<p> Note that Live2D SDK is required to compile this module, as per README.md says.</p>
+
+
+<h2><a href="#Functions">Functions</a></h2>
+<table class="function_list">
+	<tr>
+	<td class="name" nowrap><a href="#loadMocFile">loadMocFile (moc)</a></td>
+	<td class="summary">Load cubism model file without additioal setup.</td>
+	</tr>
+	<tr>
+	<td class="name" nowrap><a href="#loadModel">loadModel (model)</a></td>
+	<td class="summary">Load model definition and fully initialize model.</td>
+	</tr>
+</table>
+<h2><a href="#Class_Live2LOVEModel">Class Live2LOVEModel </a></h2>
+<table class="function_list">
+	<tr>
+	<td class="name" nowrap><a href="#Live2LOVEModel:setParamValue">Live2LOVEModel:setParamValue (name, value[, weight])</a></td>
+	<td class="summary">Set parameter value of model.</td>
+	</tr>
+	<tr>
+	<td class="name" nowrap><a href="#Live2LOVEModel:getMesh">Live2LOVEModel:getMesh ([index])</a></td>
+	<td class="summary">Retrieve LÖVE Mesh object of specified index or all Mesh objects.</td>
+	</tr>
+	<tr>
+	<td class="name" nowrap><a href="#Live2LOVEModel:update">Live2LOVEModel:update (dT)</a></td>
+	<td class="summary">Update model.</td>
+	</tr>
+	<tr>
+	<td class="name" nowrap><a href="#Live2LOVEModel:draw">Live2LOVEModel:draw ()</a></td>
+	<td class="summary">Draw model.</td>
+	</tr>
+	<tr>
+	<td class="name" nowrap><a href="#Live2LOVEModel:setExpression">Live2LOVEModel:setExpression (name)</a></td>
+	<td class="summary">Set model expression.</td>
+	</tr>
+	<tr>
+	<td class="name" nowrap><a href="#Live2LOVEModel:setMotion">Live2LOVEModel:setMotion (name[, mode])</a></td>
+	<td class="summary">Set model motion.</td>
+	</tr>
+</table>
+
+<br/>
+<br/>
+
+
+    <h2 class="section-header "><a name="Functions"></a>Functions</h2>
+
+    <dl class="function">
+    <dt>
+    <a name = "loadMocFile"></a>
+    <strong>loadMocFile (moc)</strong>
+    </dt>
+    <dd>
+    Load cubism model file without additioal setup.
+ Only use this if your model file does lack of model definition
+ or your library (or your responsibility) to control the paths.
+
+
+    <h3>Parameters:</h3>
+    <ul>
+        <li><span class="parameter">moc</span>
+            <span class="types"><a class="type" href="https://www.lua.org/manual/5.1/manual.html#5.4">string</a></span>
+         Model file path.
+        </li>
+    </ul>
+
+    <h3>Returns:</h3>
+    <ol>
+
+           <span class="types"><a class="type" href="index.html#Live2LOVEModel">Live2LOVEModel</a></span>
+        Model object
+    </ol>
+
+    <h3>Raises:</h3>
+    error when the model file is not recognized.
+
+
+
+</dd>
+    <dt>
+    <a name = "loadModel"></a>
+    <strong>loadModel (model)</strong>
+    </dt>
+    <dd>
+    Load model definition and fully initialize model.
+ Most user should use this function. This is recommended
+ way and most of the model preparation is handled.
+ by this function.
+
+
+    <h3>Parameters:</h3>
+    <ul>
+        <li><span class="parameter">model</span>
+            <span class="types"><a class="type" href="https://www.lua.org/manual/5.1/manual.html#5.4">string</a></span>
+         Model definition file path (JSON).
+        </li>
+    </ul>
+
+    <h3>Returns:</h3>
+    <ol>
+
+           <span class="types"><a class="type" href="index.html#Live2LOVEModel">Live2LOVEModel</a></span>
+        Model object.
+    </ol>
+
+    <h3>Raises:</h3>
+    error when it fails to load (due to many factor).
+
+
+
+</dd>
+</dl>
+    <h2 class="section-header has-description"><a name="Class_Live2LOVEModel"></a>Class Live2LOVEModel </h2>
+
+          <div class="section-description">
+          This is model object
+          </div>
+    <dl class="function">
+    <dt>
+    <a name = "Live2LOVEModel:setParamValue"></a>
+    <strong>Live2LOVEModel:setParamValue (name, value[, weight])</strong>
+    </dt>
+    <dd>
+    Set parameter value of model.
+
+
+    <h3>Parameters:</h3>
+    <ul>
+        <li><span class="parameter">name</span>
+            <span class="types"><a class="type" href="https://www.lua.org/manual/5.1/manual.html#5.4">string</a></span>
+         Parameter name.
+        </li>
+        <li><span class="parameter">value</span>
+            <span class="types"><span class="type">number</span></span>
+         Parameter value.
+        </li>
+        <li><span class="parameter">weight</span>
+            <span class="types"><span class="type">number</span></span>
+         Parameter weight (defaults to 1).
+         (<em>optional</em>)
+        </li>
+    </ul>
+
+
+
+
+
+</dd>
+    <dt>
+    <a name = "Live2LOVEModel:getMesh"></a>
+    <strong>Live2LOVEModel:getMesh ([index])</strong>
+    </dt>
+    <dd>
+    Retrieve LÖVE Mesh object of specified index or all Mesh objects.
+
+
+    <h3>Parameters:</h3>
+    <ul>
+        <li><span class="parameter">index</span>
+            <span class="types"><span class="type">number</span></span>
+         Index to get it's Mesh data (defaults to nil).
+         (<em>optional</em>)
+        </li>
+    </ul>
+
+    <h3>Returns:</h3>
+    <ol>
+
+        List of Mesh objects (in a table) or specified Mesh object for specified index.
+    </ol>
+
+    <h3>Raises:</h3>
+    error when index is out of range.
+
+
+
+</dd>
+    <dt>
+    <a name = "Live2LOVEModel:update"></a>
+    <strong>Live2LOVEModel:update (dT)</strong>
+    </dt>
+    <dd>
+    Update model.
+
+
+    <h3>Parameters:</h3>
+    <ul>
+        <li><span class="parameter">dT</span>
+            <span class="types"><span class="type">number</span></span>
+         Time elapsed since last frame in seconds.
+        </li>
+    </ul>
+
+
+
+
+
+</dd>
+    <dt>
+    <a name = "Live2LOVEModel:draw"></a>
+    <strong>Live2LOVEModel:draw ()</strong>
+    </dt>
+    <dd>
+    Draw model.
+ Drawing Live2D model object is done using love.graphics.draw,
+ which means that, for example, current transformation stack and
+ Shader affects the model rendering.</p>
+
+<p> Note that if you're rendering the model into Canvas, the Canvas
+ must have stencil buffer to be set (or available), or you'll getting
+ error that stencil buffer is not set!
+
+
+
+
+
+
+
+</dd>
+    <dt>
+    <a name = "Live2LOVEModel:setExpression"></a>
+    <strong>Live2LOVEModel:setExpression (name)</strong>
+    </dt>
+    <dd>
+    Set model expression.
+
+
+    <h3>Parameters:</h3>
+    <ul>
+        <li><span class="parameter">name</span>
+            <span class="types"><a class="type" href="https://www.lua.org/manual/5.1/manual.html#5.4">string</a></span>
+         Expression name.
+        </li>
+    </ul>
+
+
+    <h3>Raises:</h3>
+    error when there are no expressions loaded, initialization failure, or expression with specified name does not exist.
+
+
+
+</dd>
+    <dt>
+    <a name = "Live2LOVEModel:setMotion"></a>
+    <strong>Live2LOVEModel:setMotion (name[, mode])</strong>
+    </dt>
+    <dd>
+    Set model motion.
+
+
+    <h3>Parameters:</h3>
+    <ul>
+        <li><span class="parameter">name</span>
+            <span class="types"><a class="type" href="https://www.lua.org/manual/5.1/manual.html#5.4">string</a></span>
+         Motion name.
+        </li>
+        <li><span class="parameter">mode</span>
+         How to handle the motion. <br/>
+ 1. "normal" (or 1) will play the motion for once then revert back to previous motion. <br/>
+ 2. "loop" (or 2) will play the motion in loop. That's it. It plays the motion again when it's finished. <br/>
+ 3. "preserve" (or 3) will play the motion for once and stays that way. <br/>
+ If absent, "normal" mode is used.
+         (<em>optional</em>)
+        </li>
+    </ul>
+
+
+    <h3>Raises:</h3>
+    error when there are no motions loaded, initialization failure, or motion with specified name does not exist.
+
+
+
+</dd>
+</dl>
+
+
+</div> <!-- id="content" -->
+</div> <!-- id="main" -->
+<div id="about">
+<i>generated by <a href="http://github.com/stevedonovan/LDoc">LDoc 1.4.6</a></i>
+<i style="float:right;">Last updated 2018-06-03 17:00:59 </i>
+</div> <!-- id="about" -->
+</div> <!-- id="container" -->
+</body>
+</html>

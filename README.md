@@ -55,6 +55,11 @@ Copy `lib/windows/x64/120/Debug/live2d_opengl.lib` from Live2D to `lib/Win32/Deb
 The rest is just opening the solution file, then build.  
 The output DLL will be in `sln/{Debug,Release}` for x86 build and `sln/x64/{Debug,Release}` for x64 build.
 
+Documentation
+-------------
+
+The documentation is generated with [LDoc](https://github.com/stevedonovan/LDoc). `ldoc -c ldocConfig.ld -d docs .`
+
 License
 -------
 

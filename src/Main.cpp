@@ -457,11 +457,12 @@ int Live2LOVE_Live2LOVE_full(lua_State *L)
 			for (int i = 0; i < root["expressions"].size(); i++)
 			{
 				auto& v = root["expressions"][i];
-				if (defaultExpr.length() == 0)
-					defaultExpr = v["name"].toString().c_str();
+				std::string exprName = v["name"].toString().c_str();
+				if (defaultExpr.length() == 0 && exprName.find("default") != std::string::npos)
+					defaultExpr = exprName;
 
 				// Load
-				l2l->loadExpression(v["name"].toString().c_str(), dir + v["file"].toString().c_str());
+				l2l->loadExpression(exprName, dir + v["file"].toString().c_str());
 			}
 			// Set as default
 			if (defaultExpr.length() > 0)
@@ -519,6 +520,11 @@ int Live2LOVE_Live2LOVE_full(lua_State *L)
 			if (idleMotion.length() > 0)
 				l2l->setMotion(idleMotion, 1);
 		}
+
+		// Physics
+		if (!root["physics"].isNull())
+			// Load physics
+			l2l->loadPhysics(dir + root["physics"].toString().c_str());
 	}
 	catch (std::exception &e)
 	{
@@ -529,6 +535,7 @@ int Live2LOVE_Live2LOVE_full(lua_State *L)
 
 	// New user data
 	Live2LOVE **ptr = (Live2LOVE**)lua_newuserdata(L, sizeof(Live2LOVE*));
+	l2l->model->saveParam();
 	*ptr = l2l;
 	luaL_getmetatable(L, "Live2LOVE");
 	lua_setmetatable(L, -2);
@@ -604,6 +611,12 @@ extern "C" int LUALIB_API luaopen_Live2LOVE(lua_State *L)
 	lua_pop(L, 1);
 	lua_getfield(L, -1, "newImage");
 	RefData::setRef(L, "love.graphics.newImage", -1);
+	lua_pop(L, 1);
+	lua_getfield(L, -1, "setStencilTest");
+	RefData::setRef(L, "love.graphics.setStencilTest", -1);
+	lua_pop(L, 1);
+	lua_getfield(L, -1, "stencil");
+	RefData::setRef(L, "love.graphics.stencil", -1);
 	lua_pop(L, 2); // pop the function and the graphics table
 
 	// Setup newFileData
@@ -635,7 +648,7 @@ extern "C" int LUALIB_API luaopen_Live2LOVE(lua_State *L)
 	lua_pushcfunction(L, Live2LOVE_Live2LOVE_full);
 	lua_rawset(L, -3);
 	lua_pushstring(L, "_VERSION");
-	lua_pushstring(L, "0.2.0");
+	lua_pushstring(L, "0.3.0");
 	lua_rawset(L, -3);
 	lua_pushstring(L, "Live2DVersion");
 	lua_pushstring(L, live2d::Live2D::getVersionStr());

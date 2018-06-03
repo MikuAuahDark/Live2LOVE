@@ -93,6 +93,8 @@ namespace live2love
 		// Mesh object reference and mesh table reference
 		int meshRefID, tableRefID;
 		Live2LOVEMeshFormat *tablePointer;
+		// Clip ID mesh
+		Live2LOVEMesh *clipID;
 	};
 
 	// Live2LOVE model object
@@ -106,6 +108,8 @@ namespace live2love
 		live2d::framework::L2DPhysics* physics;
 		// Mesh data list
 		std::vector<Live2LOVEMesh*> meshData;
+		// Mesh data map (use sparingly)
+		std::map<std::string, Live2LOVEMesh*> meshDataMap;
 		// List of motions (movement)
 		std::map<std::string, live2d::AMotion*> motionList;
 		// List of expressions
@@ -169,6 +173,8 @@ namespace live2love
 		void initializeExpression();
 		// Motion initializaiton
 		void initializeMotion();
+		// Stencil drawing
+		static int drawStencil(lua_State *L);
 	};
 }
 
