@@ -51,7 +51,14 @@ static bool compareDrawOrder(const live2love::Live2LOVEMesh *a, const live2love:
 {
 	int da = a->drawData->getDrawOrder(*a->modelContext, a->drawContext);
 	int db = b->drawData->getDrawOrder(*b->modelContext, b->drawContext);
-	return da == db ? a->drawDataIndex < b->drawDataIndex : da < db;
+	//return da == db ? a->drawDataIndex < b->drawDataIndex : da < db;
+	if (da == db)
+		if (a->partsIndex == b->partsIndex)
+			return a->drawDataIndex < b->drawDataIndex;
+		else
+			return a->partsIndex < b->partsIndex;
+	else
+		return da < db;
 }
 
 // Push the FileData into stack. fileSize must not be NULL
@@ -117,6 +124,7 @@ live2love::Live2LOVE::Live2LOVE(lua_State *L, const std::string& path)
 , motionLoop("")
 , elapsedTime(0.0)
 , movementAnimation(true)
+, eyeBlinkMovement(true)
 , motion(nullptr)
 , expression(nullptr)
 , physics(nullptr)
@@ -184,15 +192,18 @@ void live2love::Live2LOVE::setupMeshData()
 		// Create new mesh object
 		Live2LOVEMesh *mesh = new Live2LOVEMesh;
 		mesh->drawData = ddtex;
-		mesh->drawContext = modelContext->getDrawContext(i);
+		mesh->drawContext = dctx;
 		mesh->modelContext = modelContext;
 		mesh->drawDataIndex = i;
+		mesh->partsIndex = dctx->getPartsIndex();
 
 		// Check clip ID
 		if (ddtex->getClipIDList())
-			mesh->clipID = meshDataMap[ddtex->getClipIDList()->operator[](0)->toChar()];
-		else
-			mesh->clipID = nullptr;
+		{
+			auto cliplist = ddtex->getClipIDList();
+			for (int k = 0; k < cliplist->size(); k++)
+				mesh->clipID.push_back(meshDataMap[cliplist->operator[](k)->toChar()]);
+		}
 
 		// Create mesh table list
 		int numPoints;
@@ -249,7 +260,7 @@ void live2love::Live2LOVE::update(double dT)
 			// Revert
 			motion->startMotion(motionList[motionLoop], false);
 
-		if (!motion->updateParam(model) && movementAnimation && eyeBlink)
+		if (!motion->updateParam(model) && movementAnimation && eyeBlink && eyeBlinkMovement)
 			// Update eye blink
 			eyeBlink->setParam(model);
 
@@ -268,8 +279,13 @@ void live2love::Live2LOVE::update(double dT)
 		// Physics update
 		if (physics) physics->updateParam(model);
 	}
+	// If there's parameter change, set it
+	for (auto& list: paramUpdateList)
+		((*model).*list.second.first)(list.first.c_str(), list.second.second.first, list.second.second.second);
+	paramUpdateList.clear();
 	// Update model
 	model->update();
+
 	// Update mesh data
 	for (auto mesh: meshData)
 	{
@@ -327,14 +343,15 @@ void live2love::Live2LOVE::draw(double x, double y, double r, double sx, double 
 	{
 		bool stencilSet = false;
 		// If there's clip ID, draw stencil first.
-		if (mesh->clipID)
+		if (mesh->clipID.size() > 0)
 		{
 			// Get stencil function
 			RefData::getRef(L, "love.graphics.setStencilTest");
 			RefData::getRef(L, "love.graphics.stencil");
 			// Push upvalues
 			lua_pushvalue(L, -3); // love.graphics.draw
-			RefData::getRef(L, mesh->clipID->meshRefID);
+			//RefData::getRef(L, mesh->clipID->meshRefID);
+			lua_pushlightuserdata(L, mesh);
 			lua_pushnumber(L, x);
 			lua_pushnumber(L, y);
 			lua_pushnumber(L, r);
@@ -434,14 +451,32 @@ void live2love::Live2LOVE::setAnimationMovement(bool a)
 	movementAnimation = a;
 }
 
-bool live2love::Live2LOVE::getAnimationMovement() const
+void live2love::Live2LOVE::setEyeBlinkMovement(bool a)
+{
+	eyeBlinkMovement = a;
+}
+
+bool live2love::Live2LOVE::isAnimationMovementEnabled() const
 {
 	return movementAnimation;
+}
+
+bool live2love::Live2LOVE::isEyeBlinkEnabled() const
+{
+	return eyeBlinkMovement;
 }
 
 void live2love::Live2LOVE::setParamValue(const std::string& name, double value, double weight)
 {
 	model->setParamFloat(name.c_str(), value, weight);
+}
+
+void live2love::Live2LOVE::setParamValuePost(const std::string& name, double value, double weight)
+{
+	paramUpdateList[name] = std::pair<setParamF, std::pair<double, double>>(
+		&Live2DModel::setParamFloat,
+		std::pair<double, double>(value, weight)
+	);
 }
 
 void live2love::Live2LOVE::addParamValue(const std::string& name, double value, double weight)
@@ -457,6 +492,11 @@ void live2love::Live2LOVE::mulParamValue(const std::string& name, double value, 
 double live2love::Live2LOVE::getParamValue(const std::string& name)
 {
 	return model->getParamFloat(name.c_str());
+}
+
+live2d::LDVector<live2d::ParamDefFloat*> *live2love::Live2LOVE::getParamInfoList()
+{
+	return model->getModelImpl()->getParamDefSet()->getParamDefFloatList();
 }
 
 std::vector<const std::string*> live2love::Live2LOVE::getExpressionList()
@@ -494,6 +534,14 @@ void live2love::Live2LOVE::setMotion(const std::string& name, int mode)
 	// Check motion mode
 	if (mode == 1) motionLoop = name;
 	else if (mode == 2) motionLoop = "";
+}
+
+void live2love::Live2LOVE::setMotion()
+{
+	// clear motion
+	if (!motion) throw namedException("No motion loaded!");
+	motionLoop = "";
+	motion->stopAllMotions();
 }
 
 void live2love::Live2LOVE::setExpression(const std::string& name)
@@ -557,10 +605,23 @@ inline void live2love::Live2LOVE::initializeExpression()
 
 int live2love::Live2LOVE::drawStencil(lua_State *L)
 {
-	lua_checkstack(L, lua_gettop(L) + 12);
-	for (int i = 0; i < 11; i++)
-		lua_pushvalue(L, lua_upvalueindex(i + 1));
-	lua_call(L, 10, 0);
+	// Upvalues:
+	// 1. love.graphics.draw
+	// 2. Mesh pointer
+	// 3,4,5,6,7,8,9,10,11: draw args
+	lua_checkstack(L, lua_gettop(L) + 15);
+	Live2LOVEMesh *mesh = (Live2LOVEMesh*)lua_topointer(L, lua_upvalueindex(2));
+	//for (int i = 0; i < 11; i++)
+	//lua_pushvalue(L, lua_upvalueindex(i + 1));
+	//lua_call(L, 10, 0);
+	for (auto x: mesh->clipID)
+	{
+		lua_pushvalue(L, lua_upvalueindex(1)); // love.graphics.draw
+		RefData::getRef(L, x->meshRefID); // Mesh
+		for (int i = 2; i < 11; i++)
+			lua_pushvalue(L, lua_upvalueindex(i + 1)); // the rest
+		lua_call(L, 10, 0);
+	}
 
 	return 0;
 }

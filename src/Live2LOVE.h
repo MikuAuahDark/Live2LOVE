@@ -37,6 +37,7 @@ extern "C" {
 #include "Live2D.h"
 #include "draw/DDTexture.h"
 #include "motion/Live2DMotion.h"
+#include "param/ParamDefSet.h"
 #include "type/LDPointF.h"
 #if defined(WIN32)
 #	include "Live2DModelWinGL.h"
@@ -86,6 +87,8 @@ namespace live2love
 		live2d::DDTexture *drawData;
 		// Draw data index
 		int drawDataIndex;
+		// Parts index
+		int partsIndex;
 		// Model context
 		live2d::ModelContext *modelContext;
 		// IDrawData context
@@ -94,12 +97,13 @@ namespace live2love
 		int meshRefID, tableRefID;
 		Live2LOVEMeshFormat *tablePointer;
 		// Clip ID mesh
-		Live2LOVEMesh *clipID;
+		std::vector<Live2LOVEMesh*> clipID;
 	};
 
 	// Live2LOVE model object
 	struct Live2LOVE
 	{
+		typedef void (Live2DModel::*setParamF)(const char *, float, float);
 		// This is pretty much self-explanatory
 		Live2DModel *model;
 		live2d::framework::L2DMotionManager* motion;
@@ -120,8 +124,12 @@ namespace live2love
 		double elapsedTime;
 		// Enable movement animation
 		bool movementAnimation;
+		// Enable eye blink
+		bool eyeBlinkMovement;
 		// Loop motion name
 		std::string motionLoop;
+		// Parameter update list
+		std::map<std::string, std::pair<setParamF, std::pair<double, double>>> paramUpdateList;
 
 		// Create new Live2LOVE object. Only load moc file
 		Live2LOVE(lua_State *L, const std::string& path);
@@ -137,18 +145,26 @@ namespace live2love
 		);
 		// Set texture to user-supplied LOVE Texture
 		void setTexture(int live2dtexno, int loveimageidx);
-		// Disable/enable animation movement (eyeblink, stationary movement thing)
+		// Disable/enable animation movement (physics & dynamic move over time)
 		void setAnimationMovement(bool anim);
+		// Disable/enable eye blinking
+		void setEyeBlinkMovement(bool anim);
 		// Set parameter value
 		void setParamValue(const std::string& name, double value, double weight = 1);
+		// Set parameter value after model update
+		void setParamValuePost(const std::string& name, double value, double weight = 1);
 		// Add parameter value
 		void addParamValue(const std::string& name, double value, double weight = 1);
 		// Multiply parameter value
 		void mulParamValue(const std::string& name, double value, double weight = 1);
 		// Get parameter value. This value is updated after the model is updated.
 		double getParamValue(const std::string& name);
+		// Get parameter information list
+		live2d::LDVector<live2d::ParamDefFloat*> *getParamInfoList();
 		// Get animation movement status
-		bool getAnimationMovement() const;
+		bool isAnimationMovementEnabled() const;
+		// Get eye blink status
+		bool isEyeBlinkEnabled() const;
 		// Get list of expression names
 		std::vector<const std::string*> getExpressionList();
 		// Get list of motion names
@@ -157,6 +173,8 @@ namespace live2love
 		std::pair<float, float> getDimensions();
 		// Set motion. mode 0 = Just play. mode 1 = Loop. mode 2 = Preserve (no loop)
 		void setMotion(const std::string& name, int mode = 0);
+		// Clear motion.
+		void setMotion();
 		// Set expression
 		void setExpression(const std::string& name);
 		// Load motion file
