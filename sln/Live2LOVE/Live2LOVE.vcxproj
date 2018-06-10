@@ -132,6 +132,7 @@
       <PreprocessorDefinitions>L2D_TARGET_WIN_GL;LUA_BUILD_AS_DLL;LUA_LIB;WIN32;NDEBUG;LIVE2LOVE_EXPORTS;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>$(SolutionDir)..\include\live2d;$(SolutionDir)..\include;$(SolutionDir)..\framework</AdditionalIncludeDirectories>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
+      <DebugInformationFormat>None</DebugInformationFormat>
     </ClCompile>
     <Link>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
@@ -151,6 +152,7 @@
       <PreprocessorDefinitions>L2D_TARGET_WIN_GL;LUA_BUILD_AS_DLL;LUA_LIB;WIN32;NDEBUG;LIVE2LOVE_EXPORTS;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>$(SolutionDir)..\include\live2d;$(SolutionDir)..\include;$(SolutionDir)..\framework</AdditionalIncludeDirectories>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
+      <DebugInformationFormat>None</DebugInformationFormat>
     </ClCompile>
     <Link>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>

@@ -181,6 +181,7 @@ void live2love::Live2LOVE::setupMeshData()
 	// Push newMesh
 	RefData::getRef(L, "love.graphics.newMesh");
 	
+	// Load mesh
 	for (int i = 0; i < drawableCount; i++)
 	{
 		// Get DrawDataTexture object
@@ -196,14 +197,6 @@ void live2love::Live2LOVE::setupMeshData()
 		mesh->modelContext = modelContext;
 		mesh->drawDataIndex = i;
 		mesh->partsIndex = dctx->getPartsIndex();
-
-		// Check clip ID
-		if (ddtex->getClipIDList())
-		{
-			auto cliplist = ddtex->getClipIDList();
-			for (int k = 0; k < cliplist->size(); k++)
-				mesh->clipID.push_back(meshDataMap[cliplist->operator[](k)->toChar()]);
-		}
 
 		// Create mesh table list
 		int numPoints;
@@ -245,6 +238,22 @@ void live2love::Live2LOVE::setupMeshData()
 		// Push to vector
 		meshData.push_back(mesh);
 		meshDataMap[ddtex->getDrawDataID()->toChar()] = mesh;
+	}
+
+	// Find clip ID list
+	for (int i = 0; i < drawableCount; i++)
+	{
+		Live2LOVEMesh *mesh = meshData[i];
+		auto cliplist = mesh->drawData->getClipIDList();
+
+		if (cliplist)
+		{
+			for (int k = 0; k < cliplist->size(); k++)
+			{
+				const char *id = cliplist->operator[](k)->toChar();
+				if (id) mesh->clipID.push_back(meshDataMap[id]);
+			}
+		}
 	}
 }
 
@@ -350,7 +359,6 @@ void live2love::Live2LOVE::draw(double x, double y, double r, double sx, double 
 			RefData::getRef(L, "love.graphics.stencil");
 			// Push upvalues
 			lua_pushvalue(L, -3); // love.graphics.draw
-			//RefData::getRef(L, mesh->clipID->meshRefID);
 			lua_pushlightuserdata(L, mesh);
 			lua_pushnumber(L, x);
 			lua_pushnumber(L, y);
@@ -373,8 +381,8 @@ void live2love::Live2LOVE::draw(double x, double y, double r, double sx, double 
 		if (meshBlendMode != blendMode)
 		{
 			// Push love.graphics.setBlendMode
-			lua_pushvalue(L, -4);
-			switch(blendMode = meshBlendMode)
+			lua_pushvalue(L, stencilSet ? -5 : -4);
+			switch (blendMode = meshBlendMode)
 			{
 				default:
 				case live2d::DDTexture::COLOR_COMPOSITION_NORMAL:
