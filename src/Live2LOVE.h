@@ -19,7 +19,7 @@
  **/
 
 #ifndef _L2L_LIVE2LOVE_
-#define _L2L_LIVE2LOVE
+#define _L2L_LIVE2LOVE_
 
 // STL
 #include <exception>
@@ -39,7 +39,7 @@ extern "C" {
 #include "motion/Live2DMotion.h"
 #include "param/ParamDefSet.h"
 #include "type/LDPointF.h"
-#if defined(WIN32)
+#if defined(_WIN32)
 #	include "Live2DModelWinGL.h"
 #	define L2L_WIN
 	typedef live2d::Live2DModelWinGL Live2DModel;
@@ -50,6 +50,7 @@ extern "C" {
 #elif defined(__APPLE__)
 #	include "TargetConditionals.h"
 #	if defined(TARGET_IPHONE_SIMULATOR) || defined(TARGET_OS_IPHONE)
+#		define L2D_TARGET_IPHONE_ES2
 #		include "Live2DModelIPhoneES2.h"
 #		define L2L_IOS
 		typedef live2d::Live2DModelIPhoneES2 Live2DModel;

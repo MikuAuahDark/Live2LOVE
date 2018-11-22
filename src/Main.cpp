@@ -334,7 +334,7 @@ int Live2LOVE_getMesh(lua_State *L)
 int Live2LOVE_getDimensions(lua_State *L)
 {
 	Live2LOVE *l2l = *(Live2LOVE**)luaL_checkudata(L, 1, "Live2LOVE");
-	std::pair<float, float>& dim = l2l->getDimensions();
+	std::pair<float, float> dim = l2l->getDimensions();
 	lua_pushnumber(L, dim.first);
 	lua_pushnumber(L, dim.second);
 	return 2;
@@ -343,16 +343,14 @@ int Live2LOVE_getDimensions(lua_State *L)
 int Live2LOVE_getWidth(lua_State *L)
 {
 	Live2LOVE *l2l = *(Live2LOVE**)luaL_checkudata(L, 1, "Live2LOVE");
-	std::pair<float, float>& dim = l2l->getDimensions();
-	lua_pushnumber(L, dim.first);
+	lua_pushnumber(L, l2l->getDimensions().first);
 	return 1;
 }
 
 int Live2LOVE_getHeight(lua_State *L)
 {
 	Live2LOVE *l2l = *(Live2LOVE**)luaL_checkudata(L, 1, "Live2LOVE");
-	std::pair<float, float>& dim = l2l->getDimensions();
-	lua_pushnumber(L, dim.second);
+	lua_pushnumber(L, l2l->getDimensions().second);
 	return 1;
 }
 

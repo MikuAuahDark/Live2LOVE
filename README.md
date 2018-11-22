@@ -17,14 +17,12 @@ Lua
 
 The Lua include file assume it's built against LuaJIT 2.0.5 (LÖVE for Windows). If not, please modify the include and the lib files accordingly.
 
-Windows Compiling
------------------
+Compiling
+---------
 
-Build instruction for Android is coming soon. iOS build instruction needs contributions.
+This is build instruction for Windows and Android. iOS build instruction needs contributions.
 
-Look at `sln/`. The project itself uses MSVC 1800/120 (VS2013) platform toolset, but the solution file is created with Visual Studio 2017.
-MSVC 1800/120 is what normally used to compile LÖVE, and it's recommended to (because LÖVE ships their VS2013 runtime DLLs).
-The rest of this compiling steps makes those assumption.
+You need [CMake](https://cmake.org/) to generate the project. Recent version is strongly recommended.
 
 You need the Live2D Cubism SDK v2.1 as described above. Your downloaded zip should have this structure
 
@@ -47,18 +45,25 @@ This copying instructions assume the directory exists in Live2LÖVE. If it's not
 
 Copy the `framework` folder from Live2D to `framework` folder in Live2LÖVE (merge).  
 Copy the `include` **contents** from Live2D to `include/live2d` folder in Live2LÖVE.  
+Copy the `lib` folder from Live2D to `lib/live2d` folder in Live2LÖVE.  
 
-For the lib file, it's bit tricky. It's recommended to copy the x64 libs first then x86 ones.  
-Copy `lib/windows/x64/120/Debug/live2d_opengl.lib` from Live2D to `lib/Win32/Debug/live2d_opengl_x64.lib` (yes, notice the `_x64` suffix)  
-**For x86, do not add `_x64` suffix!** Do same for Release libraries.
+Once all set, you should be able to build the project with CMake like this (example for Windows)
 
-The rest is just opening the solution file, then build.  
-The output DLL will be in `sln/{Debug,Release}` for x86 build and `sln/x64/{Debug,Release}` for x64 build.
+```
+cmake -G "Visual Studio 15 Win64" -T v120_xp -H. -Bbuild -DCMAKE_INSTALL_PREFIX:PATH=./output
+cmake --build build --config Release --target install
+```
+
+It will generate both static and shared library of the project in `output` folder.
 
 Documentation
 -------------
 
-The documentation is generated with [LDoc](https://github.com/stevedonovan/LDoc). `ldoc -c ldocConfig.ld -d docs .`
+The documentation is generated with [LDoc](https://github.com/stevedonovan/LDoc). You can generate the docs with this command
+
+```
+ldoc -c ldocConfig.ld -d docs
+```
 
 License
 -------
