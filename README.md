@@ -47,14 +47,44 @@ Copy the `framework` folder from Live2D to `framework` folder in Live2LÖVE (mer
 Copy the `include` **contents** from Live2D to `include/live2d` folder in Live2LÖVE.  
 Copy the `lib` folder from Live2D to `lib/live2d` folder in Live2LÖVE.  
 
-Once all set, you should be able to build the project with CMake like this (example for Windows)
+Once all set, you should be able to build the project with CMake:
+
+### Windows
+
+Build Live2LOVE.dll (shared library)
 
 ```
-cmake -G "Visual Studio 15 Win64" -T v120_xp -H. -Bbuild -DCMAKE_INSTALL_PREFIX:PATH=./output
-cmake --build build --config Release --target install
+cmake -T v120 -H. -Bbuild -DBUILD_SHARED_LIBS=1
+cmake --build build --config Release
 ```
 
-It will generate both static and shared library of the project in `output` folder.
+Build Live2LOVE.lib (static library)
+
+```
+cmake -T v120 -H. -Bbuild -DBUILD_SHARED_LIBS=0
+cmake --build build --config Release
+```
+
+### Android
+
+Assume you're using recent NDK (r16b known to work)
+
+```
+cmake -Bbuild -H. -DCMAKE_SYSTEM_NAME=Android -DCMAKE_ANDROID_ARCH_ABI=armeabi-v7a -DCMAKE_SYSTEM_VERSION=14 -DCMAKE_ANDROID_NDK_TOOLCHAIN_VERSION=clang -DCMAKE_ANDROID_STL_TYPE=c++_shared
+cmake --build build --config RelWithDebInfo
+```
+
+Note that only C++ shared STL is supported. GNUSTL won't work.
+
+It will generate libLive2LOVE.a which you can add to LOVE source as prebuit and then you have to patch `src/modules/love/love.cpp`
+
+```cpp
+// put it in place where there are tons of luaopen_*
+extern "C" int luaopen_Live2LOVE(lua_State *L)
+
+// put it above `love.nogame` string.
+	{ "Live2LOVE", luaopen_Live2LOVE },
+```
 
 Documentation
 -------------
