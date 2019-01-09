@@ -260,7 +260,8 @@ void live2love::Live2LOVE::setupMeshData()
 void live2love::Live2LOVE::update(double dT)
 {
 	elapsedTime = fmod((elapsedTime + dT), 31536000.0);
-	double t = elapsedTime * 2 * M_PI;
+	live2d::UtSystem::setUserTimeMSec(elapsedTime * 1000.0);
+	double t = fmod(elapsedTime, 1.0) * 2 * M_PI;
 	// Motion update
 	if (motion)
 	{

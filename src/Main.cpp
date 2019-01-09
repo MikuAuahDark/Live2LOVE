@@ -728,7 +728,7 @@ extern "C" int LUALIB_API luaopen_Live2LOVE(lua_State *L)
 	lua_pushcfunction(L, Live2LOVE_Live2LOVE_full);
 	lua_rawset(L, -3);
 	lua_pushstring(L, "_VERSION");
-	lua_pushstring(L, "0.4.1");
+	lua_pushstring(L, "0.4.2");
 	lua_rawset(L, -3);
 	lua_pushstring(L, "Live2DVersion");
 	lua_pushstring(L, live2d::Live2D::getVersionStr());
