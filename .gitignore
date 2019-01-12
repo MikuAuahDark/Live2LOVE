@@ -1,4 +1,5 @@
 build
+install
 include/live2d
 lib/live2d
 sln/**

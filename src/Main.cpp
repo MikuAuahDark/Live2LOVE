@@ -697,6 +697,15 @@ extern "C" int LUALIB_API luaopen_Live2LOVE(lua_State *L)
 	lua_pop(L, 1);
 	lua_getfield(L, -1, "stencil");
 	RefData::setRef(L, "love.graphics.stencil", -1);
+	lua_pop(L, 1);
+	lua_getfield(L, -1, "newShader");
+	RefData::setRef(L, "love.graphics.newShader", -1);
+	lua_pop(L, 1);
+	lua_getfield(L, -1, "setShader");
+	RefData::setRef(L, "love.graphics.setShader", -1);
+	lua_pop(L, 1);
+	lua_getfield(L, -1, "getShader");
+	RefData::setRef(L, "love.graphics.getShader", -1);
 	lua_pop(L, 2); // pop the function and the graphics table
 
 	// Setup newFileData
@@ -728,7 +737,7 @@ extern "C" int LUALIB_API luaopen_Live2LOVE(lua_State *L)
 	lua_pushcfunction(L, Live2LOVE_Live2LOVE_full);
 	lua_rawset(L, -3);
 	lua_pushstring(L, "_VERSION");
-	lua_pushstring(L, "0.4.2");
+	lua_pushstring(L, "0.4.3");
 	lua_rawset(L, -3);
 	lua_pushstring(L, "Live2DVersion");
 	lua_pushstring(L, live2d::Live2D::getVersionStr());

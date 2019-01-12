@@ -13,11 +13,7 @@ elseif(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/framework/Live2DFramework.cpp")
 	return()
 endif()
 
-set(LIVE2LOVE_SOURCE_FILES
-	# Live2LOVE files
-	src/Live2LOVE.cpp
-	src/RefData.cpp
-	src/Main.cpp
+set(LIVE2LOVE_FRAMEWORK_FILES
 	# Live2D framework files
 	framework/L2DBaseModel.cpp
 	framework/L2DExpressionMotion.cpp
@@ -32,6 +28,14 @@ set(LIVE2LOVE_SOURCE_FILES
 	framework/L2DViewMatrix.cpp
 	framework/Live2DFramework.cpp
 )
+set(LIVE2LOVE_SOURCE_FILES
+	# Live2LOVE files
+	src/Live2LOVE.cpp
+	src/RefData.cpp
+	src/Main.cpp
+	${LIVE2LOVE_FRAMEWORK_FILES}
+)
+source_group(framework FILES ${LIVE2LOVE_FRAMEWORK_FILES})
 
 # Check Live2D lib files
 if(WIN32)

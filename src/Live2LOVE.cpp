@@ -46,6 +46,16 @@ extern "C" {
 // RefData
 #include "RefData.h"
 
+// clipping
+static const char stencilFragment[] = R"(
+vec4 effect(vec4 color, Image tex, vec2 tc, vec2 sc)
+{
+	if (Texel(tex, tc).a > 0.003) return vec4(1.0, 1.0, 1.0, 1.0);
+	else discard;
+}
+)";
+static int stencilFragRef = LUA_REFNIL;
+
 // Sort operator, for std::sort
 static bool compareDrawOrder(const live2love::Live2LOVEMesh *a, const live2love::Live2LOVEMesh *b)
 {
@@ -130,6 +140,22 @@ live2love::Live2LOVE::Live2LOVE(lua_State *L, const std::string& path)
 , physics(nullptr)
 , eyeBlink(nullptr)
 {
+	// initialize clip fragment shader
+	if (stencilFragRef == LUA_REFNIL)
+	{
+		RefData::getRef(L, "love.graphics.newShader");
+		lua_pushstring(L, stencilFragment);
+		lua_pcall(L, 1, 1, 0);
+		if (lua_toboolean(L, -2) == 0)
+		{
+			namedException temp(lua_tostring(L, -1));
+			lua_pop(L, 2);
+			throw temp;
+		}
+		stencilFragRef = RefData::setRef(L, -1);
+		lua_pop(L, 1);
+	}
+
 	size_t modelSize;
 	const void *modelData = loadFileData(L, path, &modelSize);
 	// Init model
@@ -261,7 +287,7 @@ void live2love::Live2LOVE::update(double dT)
 {
 	elapsedTime = fmod((elapsedTime + dT), 31536000.0);
 	live2d::UtSystem::setUserTimeMSec(elapsedTime * 1000.0);
-	double t = fmod(elapsedTime, 1.0) * 2 * M_PI;
+	double t = elapsedTime * 2 * M_PI;
 	// Motion update
 	if (motion)
 	{
@@ -356,10 +382,12 @@ void live2love::Live2LOVE::draw(double x, double y, double r, double sx, double 
 		if (mesh->clipID.size() > 0)
 		{
 			// Get stencil function
-			RefData::getRef(L, "love.graphics.setStencilTest");
 			RefData::getRef(L, "love.graphics.stencil");
+			RefData::getRef(L, "love.graphics.setStencilTest");
+			lua_pushstring(L, "greater");
+			lua_pushnumber(L, 0);
+			lua_call(L, 2, 0); // love.graphics.setStencilTest
 			// Push upvalues
-			lua_pushvalue(L, -3); // love.graphics.draw
 			lua_pushlightuserdata(L, mesh);
 			lua_pushnumber(L, x);
 			lua_pushnumber(L, y);
@@ -370,19 +398,16 @@ void live2love::Live2LOVE::draw(double x, double y, double r, double sx, double 
 			lua_pushnumber(L, oy);
 			lua_pushnumber(L, kx);
 			lua_pushnumber(L, ky);
-			lua_pushcclosure(L, Live2LOVE::drawStencil, 11);
-			lua_call(L, 1, 0); // love.graphics.stencil
-			lua_pushvalue(L, -1);
-			lua_pushstring(L, "greater");
-			lua_pushnumber(L, 0);
-			lua_call(L, 2, 0); // love.graphics.setStencilTest
+			lua_pushcclosure(L, Live2LOVE::drawStencil, 10);
+			lua_pushstring(L, "increment");
+			lua_call(L, 2, 0); // love.graphics.stencil
 			stencilSet = true;
 		}
 		int meshBlendMode = (mesh->drawData->getOptionFlag() >> 1) & 3;
 		if (meshBlendMode != blendMode)
 		{
 			// Push love.graphics.setBlendMode
-			lua_pushvalue(L, stencilSet ? -5 : -4);
+			lua_pushvalue(L, -4);
 			switch (blendMode = meshBlendMode)
 			{
 				default:
@@ -412,7 +437,7 @@ void live2love::Live2LOVE::draw(double x, double y, double r, double sx, double 
 			// Call it
 			lua_call(L, 2, 0);
 		}
-		lua_pushvalue(L, stencilSet ? -2 : -1);
+		lua_pushvalue(L, -1);
 		RefData::getRef(L, mesh->meshRefID);
 		lua_pushnumber(L, x);
 		lua_pushnumber(L, y);
@@ -428,7 +453,10 @@ void live2love::Live2LOVE::draw(double x, double y, double r, double sx, double 
 
 		// If there's stencil, disable it.
 		if (stencilSet)
+		{
+			RefData::getRef(L, "love.graphics.setStencilTest");
 			lua_call(L, 0, 0);
+		}
 	}
 
 	// Remove love.graphics.draw
@@ -614,23 +642,35 @@ inline void live2love::Live2LOVE::initializeExpression()
 
 int live2love::Live2LOVE::drawStencil(lua_State *L)
 {
+	lua_checkstack(L, lua_gettop(L) + 16);
+
+	// Set the shader
+	RefData::getRef(L, "love.graphics.getShader");
+	lua_call(L, 0, 1);
+	RefData::getRef(L, "love.graphics.setShader");
+	RefData::getRef(L, stencilFragRef);
+	lua_call(L, 1, 0);
+	// get love.graphics.draw
+	RefData::getRef(L, "love.graphics.draw");
+
 	// Upvalues:
-	// 1. love.graphics.draw
-	// 2. Mesh pointer
-	// 3,4,5,6,7,8,9,10,11: draw args
-	lua_checkstack(L, lua_gettop(L) + 15);
-	Live2LOVEMesh *mesh = (Live2LOVEMesh*)lua_topointer(L, lua_upvalueindex(2));
-	//for (int i = 0; i < 11; i++)
-	//lua_pushvalue(L, lua_upvalueindex(i + 1));
-	//lua_call(L, 10, 0);
+	// 1. Mesh pointer
+	// 2-10: draw args
+	Live2LOVEMesh *mesh = (Live2LOVEMesh*)lua_topointer(L, lua_upvalueindex(1));
 	for (auto x: mesh->clipID)
 	{
-		lua_pushvalue(L, lua_upvalueindex(1)); // love.graphics.draw
+		lua_pushvalue(L, -1); // love.graphics.draw
 		RefData::getRef(L, x->meshRefID); // Mesh
-		for (int i = 2; i < 11; i++)
-			lua_pushvalue(L, lua_upvalueindex(i + 1)); // the rest
+		for (int i = 2; i <= 10; i++)
+			lua_pushvalue(L, lua_upvalueindex(i)); // the rest
 		lua_call(L, 10, 0);
 	}
+
+	// reset shader
+	RefData::getRef(L, "love.graphics.setShader");
+	lua_pushvalue(L, -3);
+	lua_call(L, 1, 0);
+	lua_pop(L, 2); // love.graphics.draw and used shader
 
 	return 0;
 }
