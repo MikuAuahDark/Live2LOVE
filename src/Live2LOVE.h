@@ -94,6 +94,8 @@ namespace live2love
 		live2d::ModelContext *modelContext;
 		// IDrawData context
 		live2d::IDrawContext *drawContext;
+		// PartsDataContext
+		live2d::PartsDataContext *partsContext;
 		// Mesh object reference and mesh table reference
 		int meshRefID, tableRefID;
 		Live2LOVEMeshFormat *tablePointer;

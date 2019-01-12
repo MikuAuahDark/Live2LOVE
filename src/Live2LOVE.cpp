@@ -40,8 +40,9 @@ extern "C" {
 // Live2LOVE
 #include "Live2LOVE.h"
 
-// Live2D Library (additional)
+// Live2D
 #include "base/IBaseContext.h"
+#include "model/PartsData.h"
 
 // RefData
 #include "RefData.h"
@@ -223,6 +224,7 @@ void live2love::Live2LOVE::setupMeshData()
 		mesh->modelContext = modelContext;
 		mesh->drawDataIndex = i;
 		mesh->partsIndex = dctx->getPartsIndex();
+		mesh->partsContext = modelContext->getPartsContext(mesh->partsIndex);
 
 		// Create mesh table list
 		int numPoints;
@@ -254,8 +256,7 @@ void live2love::Live2LOVE::setupMeshData()
 			m.y = points[k * 2 + 1];
 			m.u = uvmap[k * 2 + 0];
 			m.v = uvmap[k * 2 + 1];
-			m.r = m.g = m.b = 255;
-			m.a = floor(opacity * 255.0);
+			m.r = m.g = m.b = m.a = 255; // set later
 		}
 		mesh->tableRefID = RefData::setRef(L, -1); // Add FileData reference
 		mesh->tablePointer = meshDataRaw;
@@ -334,8 +335,9 @@ void live2love::Live2LOVE::update(double dT)
 		RefData::getRef(L, mesh->tableRefID);
 		int polygonCount, meshLen;
 		double opacity =
-			double(mesh->drawContext->interpolatedOpacity) *
-			double(mesh->drawContext->baseOpacity);
+			((double) mesh->drawData->getOpacity(*mesh->modelContext, mesh->drawContext)) *
+			((double) mesh->partsContext->getPartsOpacity()) *
+			((double) mesh->drawContext->baseOpacity);
 		l2d_index *vertexMap = mesh->drawData->getIndexArray(&polygonCount);
 		l2d_pointf *points = model->getTransformedPoints(mesh->drawDataIndex, &meshLen);
 		meshLen = polygonCount * 3;
