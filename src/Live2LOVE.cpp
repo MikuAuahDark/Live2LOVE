@@ -191,29 +191,36 @@ void live2love::Live2LOVE::setupMeshData()
 		l2d_index *vertexMap = ddtex->getIndexArray(&polygonCount);
 		l2d_pointf *uvmap = ddtex->getUvMap();
 		l2d_pointf *points = model->getTransformedPoints(i, &numPoints);
-		int verticesCount = polygonCount * 3;
 		
 		// Build mesh
 		lua_pushvalue(L, -1); // love.graphics.newMesh
-		lua_pushinteger(L, verticesCount);
+		lua_pushinteger(L, numPoints);
 		lua_pushstring(L, "triangles"); // Mesh draw mode
 		lua_pushstring(L, "stream"); // Mesh usage
 		lua_call(L, 3, 1); // love.graphics.newMesh
 		mesh->meshRefID = RefData::setRef(L, -1); // Add mesh reference
+
+		// Set index map
+		lua_getfield(L, -1, "setVertexMap");
+		lua_pushvalue(L, -2);
+		l2d_index *tempMap = createData<l2d_index>(L, polygonCount * 3);
+		memcpy(tempMap, vertexMap, polygonCount * sizeof(l2d_index) * 3);
+		lua_pushstring(L, "uint16");
+		lua_call(L, 3, 0); // tempMap is no longer valid
+
 		// Pop the Mesh object
 		lua_pop(L, 1);
 		
-		Live2LOVEMeshFormat *meshDataRaw = createData<Live2LOVEMeshFormat>(L, verticesCount);
-		for (int j = 0; j < verticesCount; j++)
+		Live2LOVEMeshFormat *meshDataRaw = createData<Live2LOVEMeshFormat>(L, numPoints);
+		for (int j = 0; j < numPoints; j++)
 		{
 			Live2LOVEMeshFormat& m = meshDataRaw[j];
-			l2d_index k = vertexMap[j];
 			// Mesh table format: {x, y, u, v, r, g, b, a}
 			// r, g, b will be 1
-			m.x = points[k * 2 + 0];
-			m.y = points[k * 2 + 1];
-			m.u = uvmap[k * 2 + 0];
-			m.v = uvmap[k * 2 + 1];
+			m.x = points[j * 2 + 0];
+			m.y = points[j * 2 + 1];
+			m.u = uvmap[j * 2 + 0];
+			m.v = uvmap[j * 2 + 1];
 			m.r = m.g = m.b = m.a = 255; // set later
 		}
 		mesh->tableRefID = RefData::setRef(L, -1); // Add FileData reference
@@ -291,20 +298,17 @@ void live2love::Live2LOVE::update(double dT)
 		lua_pushvalue(L, -2);
 		// Get data mesh ref
 		RefData::getRef(L, mesh->tableRefID);
-		int polygonCount, meshLen;
+		int meshLen;
 		double opacity =
 			((double) mesh->drawData->getOpacity(*mesh->modelContext, mesh->drawContext)) *
 			((double) mesh->partsContext->getPartsOpacity()) *
 			((double) mesh->drawContext->baseOpacity);
-		l2d_index *vertexMap = mesh->drawData->getIndexArray(&polygonCount);
 		l2d_pointf *points = model->getTransformedPoints(mesh->drawDataIndex, &meshLen);
-		meshLen = polygonCount * 3;
 
 		// Update
-		for (int j = 0; j < meshLen; j++)
+		for (int i = 0; i < meshLen; i++)
 		{
-			Live2LOVEMeshFormat& m = mesh->tablePointer[j];
-			l2d_index i = vertexMap[j];
+			Live2LOVEMeshFormat& m = mesh->tablePointer[i];
 			m.x = points[i * 2 + 0];
 			m.y = points[i * 2 + 1];
 			m.a = (unsigned char) floor(opacity * 255.0);

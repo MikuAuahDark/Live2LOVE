@@ -100,3 +100,6 @@ License
 
 This LÖVE library is licensed under zLib license, excluding the Live2D include files and libraries.  
 **Games/things released with this library is subject to Live2D licensing!**
+
+PicoJSON is licensed under 2-clause BSD license.
+
