@@ -39,24 +39,18 @@ extern "C" {
 #include "motion/Live2DMotion.h"
 #include "param/ParamDefSet.h"
 #include "type/LDPointF.h"
-#if defined(_WIN32)
+
+#if defined(L2D_TARGET_WIN_GL)
 #	include "Live2DModelWinGL.h"
-#	define L2L_WIN
 	typedef live2d::Live2DModelWinGL Live2DModel;
-#elif defined(__ANDROID__)
+#elif defined(L2D_TARGET_ANDROID_ES2)
 #	include "Live2DModelAndroidES2.h"
-#	define L2L_ANDROID
 	typedef live2d::Live2DModelAndroidES2 Live2DModel;
-#elif defined(__APPLE__)
-#	include "TargetConditionals.h"
-#	if defined(TARGET_IPHONE_SIMULATOR) || defined(TARGET_OS_IPHONE)
-#		define L2D_TARGET_IPHONE_ES2
-#		include "Live2DModelIPhoneES2.h"
-#		define L2L_IOS
-		typedef live2d::Live2DModelIPhoneES2 Live2DModel;
-#	endif
+#elif defined(L2D_TARGET_IPHONE_ES2)
+#	include "Live2DModelIPhoneES2.h"
+	typedef live2d::Live2DModelIPhoneES2 Live2DModel;
 #else
-#	error "Platform is not supported by Live2D"
+#	error "Try to define L2D_TARGET_* macro"
 #endif
 
 // Live2D Framework
@@ -135,7 +129,7 @@ namespace live2love
 		std::map<std::string, std::pair<setParamF, std::pair<double, double>>> paramUpdateList;
 
 		// Create new Live2LOVE object. Only load moc file
-		Live2LOVE(lua_State *L, const std::string& path);
+		Live2LOVE(lua_State *L, const void *buf, size_t size);
 		~Live2LOVE();
 		// Update model. deltaT should be in seconds.
 		void update(double deltaT);
@@ -161,7 +155,7 @@ namespace live2love
 		// Multiply parameter value
 		void mulParamValue(const std::string& name, double value, double weight = 1);
 		// Get parameter value. This value is updated after the model is updated.
-		double getParamValue(const std::string& name);
+		double getParamValue(const std::string& name) const;
 		// Get parameter information list
 		live2d::LDVector<live2d::ParamDefFloat*> *getParamInfoList();
 		// Get animation movement status
@@ -169,11 +163,11 @@ namespace live2love
 		// Get eye blink status
 		bool isEyeBlinkEnabled() const;
 		// Get list of expression names
-		std::vector<const std::string*> getExpressionList();
+		std::vector<const std::string*> getExpressionList() const;
 		// Get list of motion names
-		std::vector<const std::string*> getMotionList();
+		std::vector<const std::string*> getMotionList() const;
 		// Get model canvas dimensions
-		std::pair<float, float> getDimensions();
+		std::pair<float, float> getDimensions() const;
 		// Set motion. mode 0 = Just play. mode 1 = Loop. mode 2 = Preserve (no loop)
 		void setMotion(const std::string& name, int mode = 0);
 		// Clear motion.
@@ -181,11 +175,11 @@ namespace live2love
 		// Set expression
 		void setExpression(const std::string& name);
 		// Load motion file
-		void loadMotion(const std::string& name, const std::pair<double, double>& fade, const std::string& path);
+		void loadMotion(const std::string& name, const std::pair<double, double>& fade, const void *buf, size_t size);
 		// Load physics
-		void loadPhysics(const std::string& path);
+		void loadPhysics(const void *buf, size_t size);
 		// Load expression
-		void loadExpression(const std::string& name, const std::string& path);
+		void loadExpression(const std::string& name, const void *buf, size_t size);
 
 	private:
 		// Mesh data initialization

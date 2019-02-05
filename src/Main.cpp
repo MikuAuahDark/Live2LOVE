@@ -29,19 +29,150 @@ extern "C" {
 #include "Live2LOVE.h"
 using namespace live2love;
 
-// Live2D Library
-#include "util/Json.h"
+// JSON
+#include "picojson.h"
 
 // RefData
 #include "RefData.h"
 
 #define L2L_TRYWRAP(expr) {try { expr } catch(std::exception &x) { lua_settop(L, 0); luaL_error(L, x.what()); }}
+
+// idx must be positive
+inline const void *getLoveData(lua_State *L, int idx, size_t &size)
+{
+	// Get size
+	lua_getfield(L, idx, "getSize");
+	lua_pushvalue(L, idx);
+	lua_call(L, 1, 1);
+	size = lua_tointeger(L, -1);
+	lua_pop(L, 1);
+	// Get pointer
+	lua_getfield(L, idx, "getPointer");
+	lua_pushvalue(L, idx);
+	lua_call(L, 1, 1);
+	const void *ptr = lua_topointer(L, -1);
+	lua_pop(L, 1);
+	return ptr;
+}
+
+// Push data to stack
+const void *argToData(lua_State *L, int idx, size_t &size)
+{
+	idx = idx < 0 ? (lua_gettop(L) + 1 - idx) : idx;
+	int ltype = lua_type(L, idx);
+
+	if (ltype == LUA_TSTRING)
+	{
+		size_t length;
+		const char *data = lua_tolstring(L, idx, &length);
+
+		// length is higher than 512 is considered file contents
+		if (length >= 512)
+		{
+			size = length;
+			lua_pushvalue(L, idx);
+			return data;
+		}
+		
+		for (size_t i = 0; i < length; i++)
+		{
+			// if line contains 0x1A or 0x0A then it's assumed to be
+			// file contents too
+			if (data[i] == 26 || data[i] == 10)
+			{
+				size = length;
+				lua_pushvalue(L, idx);
+				return data;
+			}
+		}
+
+		RefData::getRef(L, "love.filesystem.read");
+		lua_pushstring(L, "data");
+		lua_pushvalue(L, idx);
+		lua_call(L, 2, 2);
+
+		if (lua_isnil(L, -2))
+		{
+			lua_remove(L, -2);
+			lua_error(L);
+		}
+
+		// FileData is now at top
+		lua_pop(L, 1);
+		return getLoveData(L, lua_gettop(L), size);
+	}
+	else if (ltype == LUA_TUSERDATA)
+	{
+		lua_getfield(L, idx, "typeOf");
+
+		if (lua_isnil(L, -1))
+		{
+			// Okay it's probably Lua FILE* object
+			lua_pop(L, 1);
+			lua_pushvalue(L, idx);
+			const char *strp = lua_tostring(L, -1);
+
+			if (strstr(strp, "file (") == strp)
+			{
+				// Okay it's FILE* handle
+				lua_pop(L, 1);
+				lua_getfield(L, idx, "read");
+				lua_pushvalue(L, idx);
+				lua_pushstring(L, "*a");
+				lua_call(L, 2, 2);
+
+				if (lua_isnil(L, -2))
+				{
+					lua_remove(L, -2);
+					lua_error(L);
+				}
+
+				lua_pop(L, 1);
+				return lua_tolstring(L, -1, &size);
+			}
+		}
+
+		// Apparently it's LOVE object
+		lua_pushvalue(L, -2);
+		lua_pushstring(L, "File");
+		lua_pushvalue(L, -3);
+		lua_pushvalue(L, -3);
+		lua_pushstring(L, "Data");
+		lua_call(L, 3, 1);
+		bool isData = lua_toboolean(L, -1) != 0;
+		lua_pop(L, 1);
+		lua_call(L, 3, 1);
+		bool isFile = lua_toboolean(L, -1) != 0;
+		lua_pop(L, 1);
+
+		if (isData)
+		{
+			lua_pushvalue(L, idx);
+			return getLoveData(L, idx, size);
+		}
+		else if (isFile)
+		{
+			lua_getfield(L, idx, "read");
+			lua_pushvalue(L, idx);
+			lua_pushstring(L, "data");
+			lua_call(L, 2, 1);
+			return getLoveData(L, lua_gettop(L), size);
+		}
+		else
+			luaL_argerror(L, idx, "Data or File expected");
+	}
+	else
+		luaL_argerror(L, idx, "Data, File, or string expected");
+
+	return nullptr;
+}
+
 int Live2LOVE_setTexture(lua_State *L)
 {
 	// Get udata
 	Live2LOVE *l2l = *(Live2LOVE**)luaL_checkudata(L, 1, "Live2LOVE");
 	// Check live2d tex number
-	int texno = luaL_checkinteger(L, 2);
+	lua_Integer texno = luaL_checkinteger(L, 2);
 	// If it's userdata, then assume it's LOVE object
 	luaL_checktype(L, 3, LUA_TUSERDATA);
 	// Call
@@ -181,16 +312,16 @@ int Live2LOVE_setMotion(lua_State *L)
 		// Get motion mode
 		int mode;
 		if (lua_isnoneornil(L, 3)) mode = 0;
-		else if (lua_isnumber(L, 3)) mode = lua_tonumber(L, 3);
+		else if (lua_isnumber(L, 3)) mode = lua_tointeger(L, 3);
 		else if (lua_isstring(L, 3))
 		{
 			std::string modeStr = std::string(lua_tostring(L, 3));
 			if (motionMapMode.find(modeStr) == motionMapMode.end())
-				luaL_argerror(L, 3, "Invalid mode");
+				luaL_argerror(L, 3, "invalid mode");
 			mode = motionMapMode[modeStr];
 		}
 		else luaL_typerror(L, 3, "string or number");
-		if (mode < 0 || mode > 2) luaL_argerror(L, 3, "Invalid mode");
+		if (mode < 0 || mode > 2) luaL_argerror(L, 3, "invalid mode");
 		// Call
 		L2L_TRYWRAP(l2l->setMotion(std::string(motionName, motionNameLen), mode););
 	}
@@ -202,7 +333,7 @@ int Live2LOVE_setAnimationMovement(lua_State *L)
 {
 	Live2LOVE *l2l = *(Live2LOVE**)luaL_checkudata(L, 1, "Live2LOVE");
 	luaL_checktype(L, 2, LUA_TBOOLEAN);
-	l2l->setAnimationMovement(lua_toboolean(L, 2));
+	l2l->setAnimationMovement(lua_toboolean(L, 2) != 0);
 	return 0;
 }
 
@@ -210,26 +341,28 @@ int Live2LOVE_setEyeBlinkMovement(lua_State *L)
 {
 	Live2LOVE *l2l = *(Live2LOVE**)luaL_checkudata(L, 1, "Live2LOVE");
 	luaL_checktype(L, 2, LUA_TBOOLEAN);
-	l2l->setEyeBlinkMovement(lua_toboolean(L, 2));
+	l2l->setEyeBlinkMovement(lua_toboolean(L, 2) != 0);
 	return 0;
 }
 
 int Live2LOVE_loadMotion(lua_State *L)
 {
-	size_t motionNameLen, fileLen;
+	size_t motionNameLen, size;
 	// Get udata
 	Live2LOVE *l2l = *(Live2LOVE**)luaL_checkudata(L, 1, "Live2LOVE");
 	// Get name and path
 	const char *motionName = luaL_checklstring(L, 2, &motionNameLen);
 	double fadeIn = luaL_checknumber(L, 3);
 	double fadeOut = luaL_checknumber(L, 4);
-	const char *file = luaL_checklstring(L, 5, &fileLen);
+	const void *buf = argToData(L, 5, size);
+
 	L2L_TRYWRAP(l2l->loadMotion(
 		std::string(motionName, motionNameLen),
 		std::pair<double, double>(fadeIn, fadeOut),
-		std::string(file, fileLen)
+		buf, size
 	););
 
+	lua_pop(L, 1);
 	return 0;
 }
 
@@ -250,13 +383,13 @@ int Live2LOVE_setExpression(lua_State *L)
 // Just copypaste from Live2LOVE_loadMotion
 int Live2LOVE_loadExpression(lua_State *L)
 {
-	size_t motionNameLen, fileLen;
+	size_t motionNameLen, size;
 	// Get udata
 	Live2LOVE *l2l = *(Live2LOVE**)luaL_checkudata(L, 1, "Live2LOVE");
 	// Get name and path
 	const char *motionName = luaL_checklstring(L, 2, &motionNameLen);
-	const char *file = luaL_checklstring(L, 3, &fileLen);
-	L2L_TRYWRAP(l2l->loadExpression(std::string(motionName, motionNameLen), std::string(file, fileLen)););
+	const void *buf = argToData(L, 3, size);
+	L2L_TRYWRAP(l2l->loadExpression(std::string(motionName, motionNameLen), buf, size););
 
 	return 0;
 }
@@ -267,8 +400,8 @@ int Live2LOVE_loadPhysics(lua_State *L)
 	// Get udata
 	Live2LOVE *l2l = *(Live2LOVE**)luaL_checkudata(L, 1, "Live2LOVE");
 	// Get name and path
-	const char *phys = luaL_checklstring(L, 2, &physLen);
-	L2L_TRYWRAP(l2l->loadPhysics(std::string(phys, physLen)););
+	const void *phys = argToData(L, 2, physLen);
+	L2L_TRYWRAP(l2l->loadPhysics(phys, physLen););
 
 	return 0;
 }
@@ -312,7 +445,7 @@ int Live2LOVE_getMesh(lua_State *L)
 	{
 		// Individual mesh
 		int index = luaL_checkinteger(L, 2);
-		if (index <= 0 || index > meshLen) luaL_argerror(L, 2, "Index out of range");
+		if (index <= 0 || index > meshLen) luaL_argerror(L, 2, "index out of range");
 
 		RefData::getRef(L, l2l->meshData[index - 1]->meshRefID);
 	}
@@ -442,12 +575,12 @@ static luaL_Reg Live2LOVE_methods[] = {
 // Load model file (basic)
 int Live2LOVE_Live2LOVE(lua_State *L)
 {
-	size_t pathSize;
+	size_t mocSize;
 	Live2LOVE *l2l = nullptr;
 	// Get path
-	const char *path = luaL_checklstring(L, 1, &pathSize);
+	const void *mocBuf = argToData(L, 1, mocSize);
 	// Call constructor
-	L2L_TRYWRAP(l2l = new Live2LOVE(L, path););
+	L2L_TRYWRAP(l2l = new Live2LOVE(L, mocBuf, mocSize););
 	// Create new user data
 	Live2LOVE **obj = (Live2LOVE**)lua_newuserdata(L, sizeof(Live2LOVE*));
 	*obj = l2l;
@@ -458,8 +591,30 @@ int Live2LOVE_Live2LOVE(lua_State *L)
 	return 1;
 }
 
-// Defined in Live2LOVE.cpp
-extern const void *loadFileData(lua_State *L, const std::string& path, size_t *fileSize);
+const void *loadFileData(lua_State *L, const std::string& path, size_t &fileSize)
+{
+	// New file data
+	RefData::getRef(L, "love.filesystem.newFileData");
+	lua_pushlstring(L, path.c_str(), path.length());
+	lua_call(L, 1, 2);
+	if (lua_isnil(L, -2))
+		lua_error(L);
+
+	// We now have FileData at -2 index, so pop 1 value
+	lua_pop(L, 1);
+	// Now FileData in -1
+	return getLoveData(L, lua_gettop(L), fileSize);
+}
+
+// Live2D JSON parser seems to append "garbage"
+// (many "/"), so this code is used to fix it.
+const char *fixJsonPaths(const char *src)
+{
+	if (strstr(src, "//") == src)
+	{}
+	return nullptr;
+}
+
 // Load model file (full)
 int Live2LOVE_Live2LOVE_full(lua_State *L)
 {
@@ -468,18 +623,21 @@ int Live2LOVE_Live2LOVE_full(lua_State *L)
 	size_t fileLen, dataSize;
 	const char *file = luaL_checklstring(L, 1, &fileLen);
 	std::string filename = std::string(file, fileLen);
-	const void *data;
-	L2L_TRYWRAP(data = loadFileData(L, filename, &dataSize););
+	const char *data;
+	L2L_TRYWRAP(data = (const char *) loadFileData(L, filename, dataSize););
 
 	// Parse JSON
-	live2d::Json *json = live2d::Json::parseFromBytes((const char*)data, dataSize);
-	if (json == nullptr) luaL_error(L, "Cannot parse model definition");
-	live2d::Value& root = json->getRoot();
-	if (root["model"].isNull())
-	{
-		delete json;
-		luaL_error(L, "Missing 'model' from model definition");
-	}
+	picojson::value json;
+	std::string parseErr;
+	picojson::parse(json, data, data + dataSize, &parseErr);
+
+	if (!parseErr.empty())
+		luaL_error(L, parseErr.c_str());
+
+	if (!json.is<picojson::object>())
+		luaL_error(L, "Root is not an object");
+
+	auto &root = json.get<picojson::object>();
 
 	// Get dir path
 	std::string dir = "";
@@ -490,13 +648,28 @@ int Live2LOVE_Live2LOVE_full(lua_State *L)
 	}
 
 	// Load model file
+	if (root.count("model") == 0)
+		luaL_error(L, "\"model\" field is missing");
+
+	auto &model = root["model"];
+	if (!model.is<std::string>())
+		luaL_error(L, "\"model\" field is not a string");
+
 	Live2LOVE *l2l = nullptr;
-	auto& debug = root["model"];
-	L2L_TRYWRAP(l2l = new Live2LOVE(L, dir + debug.toString().c_str()););
+	size_t modelSize;
+	const void *modelData = loadFileData(L, dir + model.get<std::string>(), modelSize);
+	L2L_TRYWRAP(l2l = new Live2LOVE(L, modelData, modelSize););
 
 	// Textures
-	if (!root["textures"].isNull())
+	if (root.count("textures") != 0)
 	{
+		auto &textures = root["textures"];
+		if (!textures.is<picojson::array>())
+		{
+			delete l2l;
+			luaL_error(L, "\"textures\" is not array");
+		}
+
 		// Check love.graphics.newImage settings
 		if (!lua_istable(L, 2))
 		{
@@ -507,19 +680,30 @@ int Live2LOVE_Live2LOVE_full(lua_State *L)
 		}
 		else
 			lua_pushvalue(L, 2);
+
 		// New image function
 		RefData::getRef(L, "love.graphics.newImage");
 		// Loop
-		for (int i = 0; i < root["textures"].size(); i++)
+		auto &tex = textures.get<picojson::array>();
+		for (int i = 0; i < tex.size(); i++)
 		{
+			auto &strpathval = tex[i];
+			if (!strpathval.is<std::string>())
+			{
+				delete l2l;
+				luaL_error(L, "\"textures\"[%d] is not a string", i);
+			}
+
 			lua_pushvalue(L, -1);
-			std::string texPath = dir + root["textures"][i].toString().c_str();
+			std::string texPath = dir + strpathval.get<std::string>();
+
 			// If no extension, provide one
 			if (texPath.substr(texPath.length() - 4, 4) != ".png")
 				texPath += ".png";
 			lua_pushlstring(L, texPath.c_str(), texPath.length());
 			lua_pushvalue(L, -4);
-			// love.graphics.newImage(texPath, {mipmaps = true})
+
+			// Call love.graphics.newImage(texPath, {mipmaps = true})
 			lua_call(L, 2, 1);
 			l2l->setTexture(i + 1, lua_gettop(L));
 			lua_pop(L, 1);
@@ -531,32 +715,40 @@ int Live2LOVE_Live2LOVE_full(lua_State *L)
 	try
 	{
 		// Expressions
-		if (!root["expressions"].isNull())
+		if (root.count("expressions"))
 		{
+			auto &expressionList = root["expressions"].get<picojson::array>();
 			std::string defaultExpr = "";
-			for (int i = 0; i < root["expressions"].size(); i++)
+
+			// Loop expressions
+			for (int i = 0; i < expressionList.size(); i++)
 			{
-				auto& v = root["expressions"][i];
-				std::string exprName = v["name"].toString().c_str();
+				auto &v = expressionList[i].get<picojson::object>();
+				std::string exprName = v["name"].get<std::string>();
+
 				if (defaultExpr.length() == 0 && exprName.find("default") != std::string::npos)
 					defaultExpr = exprName;
 
 				// Load
-				l2l->loadExpression(exprName, dir + v["file"].toString().c_str());
+				size_t exprSize;
+				const void *expr = loadFileData(L, dir + v["file"].get<std::string>(), exprSize);
+				l2l->loadExpression(exprName, expr, exprSize);
+				lua_pop(L, 1);
 			}
+
 			// Set as default
 			if (defaultExpr.length() > 0)
 				l2l->setExpression(defaultExpr);
 		}
 
 		// Motion
-		if (!root["motions"].isNull())
+		if (root.count("motions"))
 		{
 			std::string idleMotion;
-			for (auto& x: root["motions"].getKeys())
+			for (auto& x: root["motions"].get<picojson::object>())
 			{
-				std::string name = x.c_str();
-				auto& motionObject = root["motions"][name.c_str()];
+				std::string name = x.first;
+				auto& motionObject = x.second.get<picojson::array>();
 
 				if (idleMotion.length() == 0 && name.find("idle") == 0)
 					idleMotion = name;
@@ -566,33 +758,71 @@ int Live2LOVE_Live2LOVE_full(lua_State *L)
 					// Load multiple motion
 					for (int j = 1; j <= motionObject.size(); j++)
 					{
+						auto &motionInfo = motionObject[j - 1].get<picojson::object>();
 						std::string mName = name + ":" + std::to_string(j);
+
 						if (idleMotion.length() == 0 && mName.find("idle") == 0)
 							idleMotion = mName;
 
+						double fadeIn = 1000;
+						if (motionInfo.count("fade_in"))
+						{
+							auto &fadeInVal = motionInfo["fade_in"];
+							if (fadeInVal.is<double>())
+								fadeIn = fadeInVal.get<double>();
+						}
+
+						double fadeOut = 1000;
+						if (motionInfo.count("fade_out"))
+						{
+							auto &fadeOutVal = motionInfo["fade_out"];
+							if (fadeOutVal.is<double>())
+								fadeOut = fadeOutVal.get<double>();
+						}
+
+						size_t motionSize;
+						const void *motionData = loadFileData(L, dir + motionInfo["file"].get<std::string>(), motionSize);
 						l2l->loadMotion(
 							mName,
-							std::pair<double, double>(
-								motionObject[j - 1]["fade_in"].toDouble(1000),
-								motionObject[j - 1]["fade_out"].toDouble(1000)
-							),
-							dir + motionObject[j - 1]["file"].toString().c_str()
+							std::pair<double, double>(fadeIn, fadeOut),
+							motionData, motionSize
 						);
+						lua_pop(L, 1);
 					}
 				}
 				else
 				{
+					auto &motionInfo = motionObject[0].get<picojson::object>();
+
 					if (idleMotion.length() == 0 && name.find("idle") == 0)
 						idleMotion = name;
+
+					double fadeIn = 1000;
+					if (motionInfo.count("fade_in"))
+					{
+						auto &fadeInVal = motionInfo["fade_in"];
+						if (fadeInVal.is<double>())
+							fadeIn = fadeInVal.get<double>();
+					}
+
+					double fadeOut = 1000;
+					if (motionInfo.count("fade_out"))
+					{
+						auto &fadeOutVal = motionInfo["fade_out"];
+						if (fadeOutVal.is<double>())
+							fadeOut = fadeOutVal.get<double>();
+					}
+
+					size_t motionSize;
+					const void *motionData = loadFileData(L, dir + motionInfo["file"].get<std::string>(), motionSize);
+
 					// Load single motion.
 					l2l->loadMotion(
 						name,
-						std::pair<double, double>(
-							motionObject[0]["fade_in"].toDouble(1000),
-							motionObject[0]["fade_out"].toDouble(1000)
-						),
-						dir + motionObject[0]["file"].toString().c_str()
+						std::pair<double, double>(fadeIn, fadeOut),
+						motionData, motionSize
 					);
+					lua_pop(L, 1);
 				}
 			}
 
@@ -602,14 +832,22 @@ int Live2LOVE_Live2LOVE_full(lua_State *L)
 		}
 
 		// Physics
-		if (!root["physics"].isNull())
-			// Load physics
-			l2l->loadPhysics(dir + root["physics"].toString().c_str());
+		if (root.count("physics"))
+		{
+			auto &physicsInfo = root["physics"];
+			if (physicsInfo.is<std::string>())
+			{
+				// Load physics
+				size_t physicsSize;
+				const void *physics = loadFileData(L, dir + physicsInfo.get<std::string>(), physicsSize);
+				l2l->loadPhysics(physics, physicsSize);
+				lua_pop(L, 1);
+			}
+		}
 	}
 	catch (std::exception &e)
 	{
 		delete l2l;
-		delete json;
 		luaL_error(L, e.what());
 	}
 
@@ -627,9 +865,10 @@ int Live2LOVE_Live2LOVE_full(lua_State *L)
 extern "C" int LUALIB_API luaopen_Live2LOVE(lua_State *L)
 {
 	// Initialize Live2D
-	{unsigned int err; live2d::Live2D::init();
-	if ((err = live2d::Live2D::getError()) != live2d::Live2D::L2D_NO_ERROR)
-		luaL_error(L, "Live2D initialize error: %u",err);
+	{
+		unsigned int err; live2d::Live2D::init();
+		if ((err = live2d::Live2D::getError()) != live2d::Live2D::L2D_NO_ERROR)
+			luaL_error(L, "Live2D initialize error: %u",err);
 	}
 
 	// Create new Live2LOVE metatable
@@ -712,7 +951,10 @@ extern "C" int LUALIB_API luaopen_Live2LOVE(lua_State *L)
 	lua_getfield(L, -1, "filesystem"); // assume it's always available
 	lua_getfield(L, -1, "newFileData");
 	RefData::setRef(L, "love.filesystem.newFileData", -1);
-	lua_pop(L, 2); // pop newFileData and filesystem
+	lua_pop(L, 1);
+	lua_getfield(L, -1, "read");
+	RefData::setRef(L, "love.filesystem.read", -1);
+	lua_pop(L, 2); // pop the function and "filesystem" table.
 
 	// Setup newByteData
 	lua_getfield(L, -1, "data");
@@ -737,7 +979,7 @@ extern "C" int LUALIB_API luaopen_Live2LOVE(lua_State *L)
 	lua_pushcfunction(L, Live2LOVE_Live2LOVE_full);
 	lua_rawset(L, -3);
 	lua_pushstring(L, "_VERSION");
-	lua_pushstring(L, "0.4.3");
+	lua_pushstring(L, "0.5.0");
 	lua_rawset(L, -3);
 	lua_pushstring(L, "Live2DVersion");
 	lua_pushstring(L, live2d::Live2D::getVersionStr());
