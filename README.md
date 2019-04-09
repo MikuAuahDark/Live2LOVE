@@ -31,11 +31,15 @@ Live2D Cubism SDK for OpenGL v2.1.06
 + framework
 + include
 + lib
-++ windows
-+++ {x86,x64}
-++++ 120
-+++++ {Debug,Release}
-++++++ live2d_opengl.lib
+++ live2d
++++ windows
+++++ {x86,x64}
++++++ 120
+++++++ {Debug,Release}
++++++++ live2d_opengl.lib
++++ android
+++++ {armeabi{,-v7a},mips,x86}
++++++ liblive2d.a
 
 * some are omitted because they're not necessary for Live2LÖVE
 * {a,b} means there's both folder "a" and "b" with same folder structure
@@ -67,14 +71,27 @@ cmake --build build --config Release
 
 ### Android
 
-Assume you're using recent NDK (r16b known to work)
+#### NDK r18 and below
+
+Note that this is only tested to work in NDK **r16b**. NDK r17 and r18 may not work!
+
+Example command-line to build Live2LOVE for Android targetting architecture `armeabi-v7a` with API Level 14:
 
 ```
 cmake -Bbuild -H. -DCMAKE_SYSTEM_NAME=Android -DCMAKE_ANDROID_ARCH_ABI=armeabi-v7a -DCMAKE_SYSTEM_VERSION=14 -DCMAKE_ANDROID_NDK_TOOLCHAIN_VERSION=clang -DCMAKE_ANDROID_STL_TYPE=c++_shared
 cmake --build build --config RelWithDebInfo
 ```
 
-Note that only C++ shared STL is supported. GNUSTL won't work.
+#### NDK r19 and later
+
+Example command-line to build Live2LOVE for Android targetting architecture `armeabi-v7a` with API Level 16:
+
+```
+cmake -Bbuild -H. -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake -DANDROID_STL=c++_shared -DANDROID_TOOLCHAIN=clang -DANDROID_PLATFORM=android-16 -DANDROID_ABI=armeabi-v7a
+cmake --build build --config RelWithDebInfo
+```
+
+Regardless of NDK version, only C++ shared STL is supported. GNUSTL won't work.
 
 It will generate libLive2LOVE.a which you can add to LOVE source as prebuit and then you have to patch `src/modules/love/love.cpp`
 
