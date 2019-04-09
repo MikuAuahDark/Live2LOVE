@@ -292,11 +292,16 @@ int Live2LOVE_getParamInfoList(lua_State *L)
 	return 1;
 }
 
+/*
 static std::map<std::string, int> motionMapMode = {
 	{"normal", 0},
 	{"loop", 1},
 	{"preserve", 2}
 };
+*/
+
+static std::vector<std::string> motionStringMode = {"normal", "loop", "preserve"};
+
 int Live2LOVE_setMotion(lua_State *L)
 {
 	size_t motionNameLen;
@@ -310,15 +315,24 @@ int Live2LOVE_setMotion(lua_State *L)
 		// Get string
 		const char *motionName = luaL_checklstring(L, 2, &motionNameLen);
 		// Get motion mode
-		int mode;
-		if (lua_isnoneornil(L, 3)) mode = 0;
-		else if (lua_isnumber(L, 3)) mode = lua_tointeger(L, 3);
+		live2love::MotionModeID mode = MOTION_MAX_ENUM;
+		if (lua_isnoneornil(L, 3)) mode = MOTION_NORMAL;
+		else if (lua_isnumber(L, 3)) mode = (MotionModeID) lua_tointeger(L, 3);
 		else if (lua_isstring(L, 3))
 		{
 			std::string modeStr = std::string(lua_tostring(L, 3));
-			if (motionMapMode.find(modeStr) == motionMapMode.end())
+
+			for (int i = 0; i < MOTION_MAX_ENUM; i++)
+			{
+				if (motionStringMode[i] == modeStr)
+				{
+					mode = (MotionModeID) i;
+					break;
+				}
+			}
+
+			if (mode == MOTION_MAX_ENUM)
 				luaL_argerror(L, 3, "invalid mode");
-			mode = motionMapMode[modeStr];
 		}
 		else luaL_typerror(L, 3, "string or number");
 		if (mode < 0 || mode > 2) luaL_argerror(L, 3, "invalid mode");
@@ -828,7 +842,7 @@ int Live2LOVE_Live2LOVE_full(lua_State *L)
 
 			// Set default motion
 			if (idleMotion.length() > 0)
-				l2l->setMotion(idleMotion, 1);
+				l2l->setMotion(idleMotion, MOTION_LOOP);
 		}
 
 		// Physics

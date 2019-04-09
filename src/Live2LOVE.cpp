@@ -47,6 +47,9 @@ extern "C" {
 // RefData
 #include "RefData.h"
 
+namespace live2love
+{
+
 // clipping
 static const char stencilFragment[] = R"(
 vec4 effect(vec4 color, Image tex, vec2 tc, vec2 sc)
@@ -58,7 +61,7 @@ vec4 effect(vec4 color, Image tex, vec2 tc, vec2 sc)
 static int stencilFragRef = LUA_REFNIL;
 
 // Sort operator, for std::sort
-static bool compareDrawOrder(const live2love::Live2LOVEMesh *a, const live2love::Live2LOVEMesh *b)
+static bool compareDrawOrder(const Live2LOVEMesh *a, const Live2LOVEMesh *b)
 {
 	int da = a->drawData->getDrawOrder(*a->modelContext, a->drawContext);
 	int db = b->drawData->getDrawOrder(*b->modelContext, b->drawContext);
@@ -91,7 +94,7 @@ template<class T> T* createData(lua_State *L, size_t amount = 1)
 	return val;
 }
 
-live2love::Live2LOVE::Live2LOVE(lua_State *L, const void *buf, size_t size)
+Live2LOVE::Live2LOVE(lua_State *L, const void *buf, size_t size)
 : L(L)
 , motionLoop("")
 , elapsedTime(0.0)
@@ -129,7 +132,7 @@ live2love::Live2LOVE::Live2LOVE(lua_State *L, const void *buf, size_t size)
 	setupMeshData();
 }
 
-live2love::Live2LOVE::~Live2LOVE()
+Live2LOVE::~Live2LOVE()
 {
 	// Delete all mesh
 	for (auto mesh: meshData)
@@ -154,7 +157,7 @@ live2love::Live2LOVE::~Live2LOVE()
 	delete model;
 }
 
-void live2love::Live2LOVE::setupMeshData()
+void Live2LOVE::setupMeshData()
 {
 	// Check stack
 	lua_checkstack(L, 64);
@@ -187,7 +190,6 @@ void live2love::Live2LOVE::setupMeshData()
 		// Create mesh table list
 		int numPoints;
 		int polygonCount;
-		float opacity = ddtex->getOpacity(*modelContext, dctx);
 		l2d_index *vertexMap = ddtex->getIndexArray(&polygonCount);
 		l2d_pointf *uvmap = ddtex->getUvMap();
 		l2d_pointf *points = model->getTransformedPoints(i, &numPoints);
@@ -249,7 +251,7 @@ void live2love::Live2LOVE::setupMeshData()
 	}
 }
 
-void live2love::Live2LOVE::update(double dT)
+void Live2LOVE::update(double dT)
 {
 	elapsedTime = fmod((elapsedTime + dT), 31536000.0);
 	live2d::UtSystem::setUserTimeMSec(((l2d_int64) (elapsedTime * 1000.0)));
@@ -282,9 +284,13 @@ void live2love::Live2LOVE::update(double dT)
 		if (physics) physics->updateParam(model);
 	}
 	// If there's parameter change, set it
-	for (auto& list: paramUpdateList)
-		((*model).*list.second.first)(list.first.c_str(), list.second.second.first, list.second.second.second);
-	paramUpdateList.clear();
+	for (auto& list: postParamUpdateList)
+	{
+		model->setParamFloat(list.first.c_str(), list.second->first, list.second->second);
+		delete list.second;
+		list.second = nullptr;
+	}
+	postParamUpdateList.clear();
 	// Update model
 	model->update();
 
@@ -321,7 +327,7 @@ void live2love::Live2LOVE::update(double dT)
 	std::sort(meshData.begin(), meshData.end(), compareDrawOrder);
 }
 
-void live2love::Live2LOVE::draw(double x, double y, double r, double sx, double sy, double ox, double oy, double kx, double ky)
+void Live2LOVE::draw(double x, double y, double r, double sx, double sy, double ox, double oy, double kx, double ky)
 {
 	if (!lua_checkstack(L, lua_gettop(L) + 24))
 		throw namedException("Internal error: cannot grow Lua stack size");
@@ -429,7 +435,7 @@ void live2love::Live2LOVE::draw(double x, double y, double r, double sx, double 
 	lua_call(L, 2, 0);
 }
 
-void live2love::Live2LOVE::setTexture(int live2dtexno, int loveimageidx)
+void Live2LOVE::setTexture(int live2dtexno, int loveimageidx)
 {
 	// List mesh
 	for (auto mesh: meshData)
@@ -447,60 +453,57 @@ void live2love::Live2LOVE::setTexture(int live2dtexno, int loveimageidx)
 	}
 }
 
-void live2love::Live2LOVE::setAnimationMovement(bool a)
+void Live2LOVE::setAnimationMovement(bool a)
 {
 	movementAnimation = a;
 }
 
-void live2love::Live2LOVE::setEyeBlinkMovement(bool a)
+void Live2LOVE::setEyeBlinkMovement(bool a)
 {
 	eyeBlinkMovement = a;
 }
 
-bool live2love::Live2LOVE::isAnimationMovementEnabled() const
+bool Live2LOVE::isAnimationMovementEnabled() const
 {
 	return movementAnimation;
 }
 
-bool live2love::Live2LOVE::isEyeBlinkEnabled() const
+bool Live2LOVE::isEyeBlinkEnabled() const
 {
 	return eyeBlinkMovement;
 }
 
-void live2love::Live2LOVE::setParamValue(const std::string& name, double value, double weight)
+void Live2LOVE::setParamValue(const std::string& name, double value, double weight)
 {
 	model->setParamFloat(name.c_str(), (float) value, (float) weight);
 }
 
-void live2love::Live2LOVE::setParamValuePost(const std::string& name, double value, double weight)
+void Live2LOVE::setParamValuePost(const std::string& name, double value, double weight)
 {
-	paramUpdateList[name] = std::pair<setParamF, std::pair<double, double>>(
-		&Live2DModel::setParamFloat,
-		std::pair<double, double>(value, weight)
-	);
+	postParamUpdateList[name] = new std::pair<double, double>(value, weight);
 }
 
-void live2love::Live2LOVE::addParamValue(const std::string& name, double value, double weight)
+void Live2LOVE::addParamValue(const std::string& name, double value, double weight)
 {
 	model->addToParamFloat(name.c_str(), (float) value, (float) weight);
 }
 
-void live2love::Live2LOVE::mulParamValue(const std::string& name, double value, double weight)
+void Live2LOVE::mulParamValue(const std::string& name, double value, double weight)
 {
 	model->multParamFloat(name.c_str(), (float) value, (float) weight);
 }
 
-double live2love::Live2LOVE::getParamValue(const std::string& name) const
+double Live2LOVE::getParamValue(const std::string& name) const
 {
 	return model->getParamFloat(name.c_str());
 }
 
-live2d::LDVector<live2d::ParamDefFloat*> *live2love::Live2LOVE::getParamInfoList()
+live2d::LDVector<live2d::ParamDefFloat*> *Live2LOVE::getParamInfoList()
 {
 	return model->getModelImpl()->getParamDefSet()->getParamDefFloatList();
 }
 
-std::vector<const std::string*> live2love::Live2LOVE::getExpressionList() const
+std::vector<const std::string*> Live2LOVE::getExpressionList() const
 {
 	std::vector<const std::string*> value = {};
 
@@ -510,7 +513,7 @@ std::vector<const std::string*> live2love::Live2LOVE::getExpressionList() const
 	return value;
 }
 
-std::vector<const std::string*> live2love::Live2LOVE::getMotionList() const
+std::vector<const std::string*> Live2LOVE::getMotionList() const
 {
 	std::vector<const std::string*> value = {};
 
@@ -520,12 +523,12 @@ std::vector<const std::string*> live2love::Live2LOVE::getMotionList() const
 	return value;
 }
 
-std::pair<float, float> live2love::Live2LOVE::getDimensions() const
+std::pair<float, float> Live2LOVE::getDimensions() const
 {
 	return std::pair<float, float>(model->getCanvasWidth(), model->getCanvasHeight());
 }
 
-void live2love::Live2LOVE::setMotion(const std::string& name, int mode)
+void Live2LOVE::setMotion(const std::string& name, MotionModeID mode)
 {
 	// No motion? well load one first before using this.
 	if (!motion) throw namedException("No motion loaded!");
@@ -537,7 +540,7 @@ void live2love::Live2LOVE::setMotion(const std::string& name, int mode)
 	else if (mode == 2) motionLoop = "";
 }
 
-void live2love::Live2LOVE::setMotion()
+void Live2LOVE::setMotion()
 {
 	// clear motion
 	if (!motion) throw namedException("No motion loaded!");
@@ -545,7 +548,7 @@ void live2love::Live2LOVE::setMotion()
 	motion->stopAllMotions();
 }
 
-void live2love::Live2LOVE::setExpression(const std::string& name)
+void Live2LOVE::setExpression(const std::string& name)
 {
 	// No expression? Load one first!
 	if (!expression) throw namedException("No expression loaded!");
@@ -553,7 +556,7 @@ void live2love::Live2LOVE::setExpression(const std::string& name)
 	expression->startMotion(expressionList[name], false);
 }
 
-void live2love::Live2LOVE::loadMotion(const std::string& name, const std::pair<double, double>& fade, const void *buf, size_t size)
+void Live2LOVE::loadMotion(const std::string& name, const std::pair<double, double>& fade, const void *buf, size_t size)
 {
 	initializeMotion();
 	// Load file
@@ -567,7 +570,7 @@ void live2love::Live2LOVE::loadMotion(const std::string& name, const std::pair<d
 	motionList[name] = motion;
 }
 
-void live2love::Live2LOVE::loadExpression(const std::string& name, const void *buf, size_t size)
+void Live2LOVE::loadExpression(const std::string& name, const void *buf, size_t size)
 {
 	initializeExpression();
 	// Load file
@@ -579,24 +582,24 @@ void live2love::Live2LOVE::loadExpression(const std::string& name, const void *b
 	expressionList[name] = expr;
 }
 
-void live2love::Live2LOVE::loadPhysics(const void *buf, size_t size)
+void Live2LOVE::loadPhysics(const void *buf, size_t size)
 {
 	// Load file
 	physics = live2d::framework::L2DPhysics::load(buf, size);
 	if (physics == nullptr) throw namedException("Failed to load physics");
 }
 
-inline void live2love::Live2LOVE::initializeMotion()
+inline void Live2LOVE::initializeMotion()
 {
 	if (!motion) motion = new live2d::framework::L2DMotionManager();
 }
 
-inline void live2love::Live2LOVE::initializeExpression()
+inline void Live2LOVE::initializeExpression()
 {
 	if (!expression) expression = new live2d::framework::L2DMotionManager();
 }
 
-int live2love::Live2LOVE::drawStencil(lua_State *L)
+int Live2LOVE::drawStencil(lua_State *L)
 {
 	lua_checkstack(L, lua_gettop(L) + 16);
 
@@ -630,3 +633,5 @@ int live2love::Live2LOVE::drawStencil(lua_State *L)
 
 	return 0;
 }
+
+} /* live2love */

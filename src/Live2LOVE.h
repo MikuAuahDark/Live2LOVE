@@ -68,6 +68,13 @@ namespace live2love
 {
 	typedef std::runtime_error namedException;
 
+	enum MotionModeID {
+		MOTION_NORMAL,
+		MOTION_LOOP,
+		MOTION_PRESERVE,
+		MOTION_MAX_ENUM
+	};
+
 	// Default LOVE mesh format
 	struct Live2LOVEMeshFormat
 	{
@@ -100,7 +107,6 @@ namespace live2love
 	// Live2LOVE model object
 	struct Live2LOVE
 	{
-		typedef void (Live2DModel::*setParamF)(const char *, float, float);
 		// This is pretty much self-explanatory
 		Live2DModel *model;
 		live2d::framework::L2DMotionManager* motion;
@@ -126,7 +132,7 @@ namespace live2love
 		// Loop motion name
 		std::string motionLoop;
 		// Parameter update list
-		std::map<std::string, std::pair<setParamF, std::pair<double, double>>> paramUpdateList;
+		std::map<std::string, std::pair<double, double>*> postParamUpdateList;
 
 		// Create new Live2LOVE object. Only load moc file
 		Live2LOVE(lua_State *L, const void *buf, size_t size);
@@ -169,7 +175,7 @@ namespace live2love
 		// Get model canvas dimensions
 		std::pair<float, float> getDimensions() const;
 		// Set motion. mode 0 = Just play. mode 1 = Loop. mode 2 = Preserve (no loop)
-		void setMotion(const std::string& name, int mode = 0);
+		void setMotion(const std::string& name, MotionModeID mode = MOTION_NORMAL);
 		// Clear motion.
 		void setMotion();
 		// Set expression
