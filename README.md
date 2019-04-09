@@ -31,15 +31,14 @@ Live2D Cubism SDK for OpenGL v2.1.06
 + framework
 + include
 + lib
-++ live2d
-+++ windows
-++++ {x86,x64}
-+++++ 120
-++++++ {Debug,Release}
-+++++++ live2d_opengl.lib
-+++ android
-++++ {armeabi{,-v7a},mips,x86}
-+++++ liblive2d.a
+++ windows
++++ {x86,x64}
+++++ 120
++++++ {Debug,Release}
+++++++ live2d_opengl.lib
+++ android
++++ {armeabi{,-v7a},mips,x86}
+++++ liblive2d.a
 
 * some are omitted because they're not necessary for Live2LÖVE
 * {a,b} means there's both folder "a" and "b" with same folder structure
