@@ -24,6 +24,7 @@
 // STL
 #include <exception>
 #include <map>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -33,40 +34,21 @@ extern "C" {
 #include <lauxlib.h>
 }
 
-// Live2D Library
-#include "Live2D.h"
-#include "draw/DDTexture.h"
-#include "motion/Live2DMotion.h"
-#include "param/ParamDefSet.h"
-#include "type/LDPointF.h"
-
-#if defined(L2D_TARGET_WIN_GL)
-#	include "Live2DModelWinGL.h"
-	typedef live2d::Live2DModelWinGL Live2DModel;
-#elif defined(L2D_TARGET_ANDROID_ES2)
-#	include "Live2DModelAndroidES2.h"
-	typedef live2d::Live2DModelAndroidES2 Live2DModel;
-#elif defined(L2D_TARGET_IPHONE_ES2)
-#	include "Live2DModelIPhoneES2.h"
-	typedef live2d::Live2DModelIPhoneES2 Live2DModel;
-#else
-#	error "Try to define L2D_TARGET_* macro"
-#endif
+// Live2D
+#include "Live2DCubismCore.hpp"
 
 // Live2D Framework
-#include "L2DPhysics.h"
-#include "L2DPose.h"
-#include "L2DModelMatrix.h"
-#include "L2DMotionManager.h"
-#include "L2DEyeBlink.h"
-#include "L2DMotionManager.h"
-#include "L2DExpressionMotion.h"
-#include "L2DTargetPoint.h"
-#include "L2DTextureDesc.h"
+#include "Effect/CubismBreath.hpp"
+#include "Effect/CubismEyeBlink.hpp"
+#include "Model/CubismMoc.hpp"
+#include "Model/CubismModel.hpp"
+#include "Motion/CubismMotionManager.hpp"
+#include "Physics/CubismPhysics.hpp"
 
 namespace live2love
 {
 	typedef std::runtime_error namedException;
+	constexpr double PI = 3.14159265358979323846264338327950288;
 
 	enum MotionModeID {
 		MOTION_NORMAL,
@@ -85,18 +67,10 @@ namespace live2love
 	// Live2LOVE mesh object
 	struct Live2LOVEMesh
 	{
-		// Associated DDTexture
-		live2d::DDTexture *drawData;
 		// Draw data index
-		int drawDataIndex;
-		// Parts index
-		int partsIndex;
-		// Model context
-		live2d::ModelContext *modelContext;
-		// IDrawData context
-		live2d::IDrawContext *drawContext;
-		// PartsDataContext
-		live2d::PartsDataContext *partsContext;
+		int index;
+		// Texture index
+		int textureIndex;
 		// Mesh object reference and mesh table reference
 		int meshRefID, tableRefID;
 		Live2LOVEMeshFormat *tablePointer;
@@ -104,23 +78,32 @@ namespace live2love
 		std::vector<Live2LOVEMesh*> clipID;
 	};
 
+	struct Live2LOVEParamDef
+	{
+		std::string name;
+		double min, max;
+	};
+
 	// Live2LOVE model object
 	struct Live2LOVE
 	{
 		// This is pretty much self-explanatory
-		Live2DModel *model;
-		live2d::framework::L2DMotionManager* motion;
-		live2d::framework::L2DMotionManager* expression;
-		live2d::framework::L2DEyeBlink* eyeBlink;
-		live2d::framework::L2DPhysics* physics;
+		//uint8_t *mocFreeThis;
+		Live2D::Cubism::Framework::CubismMoc *moc;
+		Live2D::Cubism::Framework::CubismModel *model;
+		Live2D::Cubism::Framework::CubismMotionManager *motion;
+		Live2D::Cubism::Framework::CubismMotionManager* expression;
+		Live2D::Cubism::Framework::CubismEyeBlink *eyeBlink;
+		Live2D::Cubism::Framework::CubismPhysics *physics;
+		Live2D::Cubism::Framework::CubismBreath *breath;
 		// Mesh data list
 		std::vector<Live2LOVEMesh*> meshData;
 		// Mesh data map (use sparingly)
 		std::map<std::string, Live2LOVEMesh*> meshDataMap;
 		// List of motions (movement)
-		std::map<std::string, live2d::AMotion*> motionList;
+		std::map<std::string, Live2D::Cubism::Framework::ACubismMotion*> motionList;
 		// List of expressions
-		std::map<std::string, live2d::AMotion*> expressionList;
+		std::map<std::string, Live2D::Cubism::Framework::ACubismMotion*> expressionList;
 		// Lua state
 		lua_State *L;
 		// Elapsed time. Modulated by 31536000.0 (1 year)
@@ -163,7 +146,7 @@ namespace live2love
 		// Get parameter value. This value is updated after the model is updated.
 		double getParamValue(const std::string& name) const;
 		// Get parameter information list
-		live2d::LDVector<live2d::ParamDefFloat*> *getParamInfoList();
+		std::vector<Live2LOVEParamDef*> *getParamInfoList();
 		// Get animation movement status
 		bool isAnimationMovementEnabled() const;
 		// Get eye blink status

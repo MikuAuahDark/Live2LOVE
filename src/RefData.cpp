@@ -65,6 +65,7 @@ int RefData::setRef(lua_State *L, int luaval)
 	lua_pop(L, 1); // pop the table
 	return v;
 }
+
 int RefData::setRef(lua_State *L, const std::string& name, int luaval)
 {
 	if (namedRef.find(name) != namedRef.end())

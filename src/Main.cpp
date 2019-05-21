@@ -37,6 +37,49 @@ using namespace live2love;
 
 #define L2L_TRYWRAP(expr) {try { expr } catch(std::exception &x) { lua_settop(L, 0); luaL_error(L, x.what()); }}
 
+class Live2LOVEAllocator: public Live2D::Cubism::Framework::ICubismAllocator
+{
+	void *Allocate(const Live2D::Cubism::Framework::csmSizeType size)
+	{
+		return new (std::nothrow) uint8_t[size];
+	}
+
+	void Deallocate(void *ptr)
+	{
+		delete[] ptr;
+	}
+
+	void *AllocateAligned(const Live2D::Cubism::Framework::csmSizeType size, const Live2D::Cubism::Framework::csmUint32 align)
+	{
+		size_t offset, shift, alignedAddress;
+		void* allocation;
+		void** preamble;
+
+		offset = align - 1 + sizeof(void*);
+
+		allocation = Allocate(size + offset);
+		if (allocation == nullptr)
+			return nullptr;
+
+		alignedAddress = (size_t) (allocation) + sizeof(void*);
+		shift = alignedAddress % align;
+
+		if (shift)
+			alignedAddress += (align - shift);
+
+		preamble = (void **) alignedAddress;
+		preamble[-1] = allocation;
+
+		return (void *) alignedAddress;
+	}
+
+	void DeallocateAligned(void *ptr)
+	{
+		void **preamble = (void **) ptr;
+		Deallocate(preamble[-1]);
+	}
+};
+
 // idx must be positive
 inline const void *getLoveData(lua_State *L, int idx, size_t &size)
 {
@@ -879,11 +922,15 @@ int Live2LOVE_Live2LOVE_full(lua_State *L)
 extern "C" int LUALIB_API luaopen_Live2LOVE(lua_State *L)
 {
 	// Initialize Live2D
+	if (Live2D::Cubism::Framework::CubismFramework::IsStarted() == false)
 	{
-		unsigned int err; live2d::Live2D::init();
-		if ((err = live2d::Live2D::getError()) != live2d::Live2D::L2D_NO_ERROR)
-			luaL_error(L, "Live2D initialize error: %u",err);
+		static Live2LOVEAllocator allocator;
+		Live2D::Cubism::Framework::CubismFramework::StartUp(&allocator);
+		Live2D::Cubism::Framework::CubismFramework::Initialize();
 	}
+
+	if (Live2D::Cubism::Framework::CubismFramework::IsInitialized() == false)
+		Live2D::Cubism::Framework::CubismFramework::Initialize();
 
 	// Create new Live2LOVE metatable
 	luaL_newmetatable(L, "Live2LOVE");

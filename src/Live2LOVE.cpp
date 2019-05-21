@@ -40,12 +40,13 @@ extern "C" {
 // Live2LOVE
 #include "Live2LOVE.h"
 
-// Live2D
-#include "base/IBaseContext.h"
-#include "model/PartsData.h"
-
 // RefData
 #include "RefData.h"
+
+inline std::string fromCsmString(const Live2D::Cubism::Framework::csmString &str)
+{
+	return std::string(str.GetRawString(), (size_t) str.GetLength());
+}
 
 namespace live2love
 {
@@ -96,15 +97,21 @@ template<class T> T* createData(lua_State *L, size_t amount = 1)
 
 Live2LOVE::Live2LOVE(lua_State *L, const void *buf, size_t size)
 : L(L)
+, moc(nullptr)
+, model(nullptr)
+, motion(nullptr)
+, breath(nullptr)
+, expression(nullptr)
+, eyeBlink(nullptr)
+, physics(nullptr)
 , motionLoop("")
 , elapsedTime(0.0)
 , movementAnimation(true)
 , eyeBlinkMovement(true)
-, motion(nullptr)
-, expression(nullptr)
-, physics(nullptr)
-, eyeBlink(nullptr)
 {
+	constexpr uintptr_t MOC_ALIGN = Live2D::Cubism::Core::csmAlignofMoc - 1;
+	constexpr uintptr_t MODEL_ALIGN = Live2D::Cubism::Core::csmAlignofModel - 1;
+
 	// initialize clip fragment shader
 	if (stencilFragRef == LUA_REFNIL)
 	{
@@ -121,13 +128,21 @@ Live2LOVE::Live2LOVE(lua_State *L, const void *buf, size_t size)
 		lua_pop(L, 1);
 	}
 
-	// Init model
-	model = Live2DModel::loadModel(buf, size);
-	if (model == nullptr) throw namedException("Failed to load model");
+	// Init moc
+	moc = Live2D::Cubism::Framework::CubismMoc::Create((Live2D::Cubism::Framework::csmByte *) buf, size);
+	if (moc == nullptr)
+		throw namedException("Failed to initialize moc");
 
-	eyeBlink = new live2d::framework::L2DEyeBlink();
-	model->setPremultipliedAlpha(false);
-	model->update();
+	// Init model
+	model = moc->CreateModel();
+	if (model == nullptr)
+		throw namedException("Failed to intialize model");
+
+	eyeBlink = Live2D::Cubism::Framework::CubismEyeBlink::Create();
+	breath = Live2D::Cubism::Framework::CubismBreath::Create();
+
+	// Update model
+	model->Update();
 	// Setup mesh data
 	setupMeshData();
 }
@@ -142,57 +157,38 @@ Live2LOVE::~Live2LOVE()
 		delete mesh;
 	}
 
-	// Delete all motions
-	for (auto& x: motionList)
-		// nullptr delete is okay
-		delete x.second;
-	// Delete all expressions
-	for (auto& x: expressionList)
-		delete x.second;
-
-	delete eyeBlink;
-	// Delete physics
-	delete physics;
-	// Delete model
-	delete model;
+	// Deleting null pointer is okay
+	Live2D::Cubism::Framework::CubismBreath::Delete(breath);
+	Live2D::Cubism::Framework::CubismEyeBlink::Delete(eyeBlink);
+	Live2D::Cubism::Framework::CubismPhysics::Delete(physics);
+	moc->DeleteModel(model);
+	Live2D::Cubism::Framework::CubismMoc::Delete(moc);
 }
 
 void Live2LOVE::setupMeshData()
 {
 	// Check stack
 	lua_checkstack(L, 64);
-	// Get model context
-	live2d::ModelContext *modelContext = model->getModelContext();
 	// Get drawable count
-	int drawableCount = modelContext->getDrawDataCount();
+	int drawableCount = model->GetDrawableCount();
 	meshData.reserve(drawableCount);
 	// Push newMesh
 	RefData::getRef(L, "love.graphics.newMesh");
 	
 	// Load mesh
 	for (int i = 0; i < drawableCount; i++)
-	{
-		// Get DrawDataTexture object
-		live2d::DDTexture *ddtex = dynamic_cast<live2d::DDTexture*>(modelContext->getDrawData(i));
-		// Not HonokaMiku's DecrypterContext!
-		live2d::IDrawContext * dctx = modelContext->getDrawContext(i);
-		if (ddtex == nullptr) continue; // not DDTexture. Skip.
-		
+	{	
 		// Create new mesh object
 		Live2LOVEMesh *mesh = new Live2LOVEMesh;
-		mesh->drawData = ddtex;
-		mesh->drawContext = dctx;
-		mesh->modelContext = modelContext;
-		mesh->drawDataIndex = i;
-		mesh->partsIndex = dctx->getPartsIndex();
-		mesh->partsContext = modelContext->getPartsContext(mesh->partsIndex);
+		mesh->index = i; // assume 0-based ID
+		mesh->textureIndex = model->GetDrawableTextureIndices(i);
 
 		// Create mesh table list
-		int numPoints;
-		int polygonCount;
-		l2d_index *vertexMap = ddtex->getIndexArray(&polygonCount);
-		l2d_pointf *uvmap = ddtex->getUvMap();
-		l2d_pointf *points = model->getTransformedPoints(i, &numPoints);
+		int numPoints = model->GetDrawableVertexCount(i);
+		int polygonCount = model->GetDrawableVertexIndexCount(i);
+		const Live2D::Cubism::Framework::csmUint16 *vertexMap = model->GetDrawableVertexIndices(i);
+		const Live2D::Cubism::Core::csmVector2 *uvmap = model->GetDrawableVertexUvs(i);
+		const Live2D::Cubism::Core::csmVector2 *points = model->GetDrawableVertexPositions(i);
 		
 		// Build mesh
 		lua_pushvalue(L, -1); // love.graphics.newMesh
@@ -205,8 +201,8 @@ void Live2LOVE::setupMeshData()
 		// Set index map
 		lua_getfield(L, -1, "setVertexMap");
 		lua_pushvalue(L, -2);
-		l2d_index *tempMap = createData<l2d_index>(L, polygonCount * 3);
-		memcpy(tempMap, vertexMap, polygonCount * sizeof(l2d_index) * 3);
+		Live2D::Cubism::Framework::csmUint16 *tempMap = createData<Live2D::Cubism::Framework::csmUint16>(L, polygonCount * 3);
+		memcpy(tempMap, vertexMap, polygonCount * sizeof(Live2D::Cubism::Framework::csmUint16) * 3);
 		lua_pushstring(L, "uint16");
 		lua_call(L, 3, 0); // tempMap is no longer valid
 
@@ -219,10 +215,10 @@ void Live2LOVE::setupMeshData()
 			Live2LOVEMeshFormat& m = meshDataRaw[j];
 			// Mesh table format: {x, y, u, v, r, g, b, a}
 			// r, g, b will be 1
-			m.x = points[j * 2 + 0];
-			m.y = points[j * 2 + 1];
-			m.u = uvmap[j * 2 + 0];
-			m.v = uvmap[j * 2 + 1];
+			m.x = points[j].X;
+			m.y = points[j].Y;
+			m.u = uvmap[j].X;
+			m.v = uvmap[j].Y;
 			m.r = m.g = m.b = m.a = 255; // set later
 		}
 		mesh->tableRefID = RefData::setRef(L, -1); // Add FileData reference
@@ -231,42 +227,42 @@ void Live2LOVE::setupMeshData()
 
 		// Push to vector
 		meshData.push_back(mesh);
-		meshDataMap[ddtex->getDrawDataID()->toChar()] = mesh;
+		meshDataMap[fromCsmString(model->GetDrawableId(i)->GetString())] = mesh;
 	}
+
+	const Live2D::Cubism::Framework::csmInt32 *clipCount = model->GetDrawableMaskCounts();
+	const Live2D::Cubism::Framework::csmInt32 **clipMask = model->GetDrawableMasks();
 
 	// Find clip ID list
 	for (int i = 0; i < drawableCount; i++)
 	{
 		Live2LOVEMesh *mesh = meshData[i];
-		auto cliplist = mesh->drawData->getClipIDList();
 
-		if (cliplist)
+		if (clipCount[i] > 0)
 		{
-			for (unsigned int k = 0; k < cliplist->size(); k++)
-			{
-				const char *id = cliplist->operator[](k)->toChar();
-				if (id) mesh->clipID.push_back(meshDataMap[id]);
-			}
+			for (unsigned int k = 0; k < clipCount[i]; k++)
+				mesh->clipID.push_back(meshData[clipMask[i][k]]);
 		}
 	}
 }
 
-void Live2LOVE::update(double dT)
+void Live2LOVE::update(double dt)
 {
-	elapsedTime = fmod((elapsedTime + dT), 31536000.0);
-	live2d::UtSystem::setUserTimeMSec(((l2d_int64) (elapsedTime * 1000.0)));
-	double t = elapsedTime * 2 * M_PI;
+	//elapsedTime = fmod((elapsedTime + dT), 31536000.0);
+	//live2d::UtSystem::setUserTimeMSec(((l2d_int64) (elapsedTime * 1000.0)));
+	double t = elapsedTime * 2 * PI;
 	// Motion update
 	if (motion)
 	{
-		model->loadParam();
-		if (motion->isFinished() && motionLoop.length() > 0)
+		model->LoadParameters();
+		if (motion->IsFinished() && motionLoop.length() > 0)
 			// Revert
-			motion->startMotion(motionList[motionLoop], false);
+			motion->StartMotion(motionList[motionLoop], false, dt);
 
-		if (!motion->updateParam(model) && movementAnimation && eyeBlink && eyeBlinkMovement)
+		if (!motion->UpdateMotion(model, dt) && movementAnimation && eyeBlink && eyeBlinkMovement)
 			// Update eye blink
-			eyeBlink->setParam(model);
+			//eyeBlink->setParam(model);
+			eyeBlink->SetParameterIds(
 
 		model->saveParam();
 	}
