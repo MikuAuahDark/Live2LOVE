@@ -1,8 +1,7 @@
 .vscode
 build
 install
-include/live2d
-lib/live2d
+live2d/Core
 sln/**
 !sln/Live2LOVE
 !sln/Live2LOVE.sln

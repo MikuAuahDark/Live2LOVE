@@ -7,8 +7,8 @@ Require at least LÖVE 11.0 to run.
 Live2D Notice
 -------------
 
-You need Live2D Cubism SDK v2.1 to compile this project. This repository doesn't ship it, and you need to retrieve that from Live2D website. Make sure to grab 
-[Live2D Cubism SDK v2.1 for OpenGL (Cocos2d-x) development](http://sites.cybernoids.jp/cubism-sdk2/opengl2-1).
+You need Live2D Cubism 3 SDK for Native to compile this project. This repository doesn't ship it, and you need to retrieve that from Live2D website.
+Make sure to grab [Live2D Cubism 3 SDK for Native](https://live2d.github.io/).
 
 Note that distributing your game which uses this library is subject to Live2D licensing.
 
@@ -27,28 +27,15 @@ You need [CMake](https://cmake.org/) to generate the project. Recent version is 
 You need the Live2D Cubism SDK v2.1 as described above. Your downloaded zip should have this structure
 
 ```
-Live2D Cubism SDK for OpenGL v2.1.06
-+ framework
-+ include
-+ lib
-++ windows
-+++ {x86,x64}
-++++ 120
-+++++ {Debug,Release}
-++++++ live2d_opengl.lib
-++ android
-+++ {armeabi{,-v7a},mips,x86}
-++++ liblive2d.a
+Cubism3SDKforNative-<version>
++ Core
 
 * some are omitted because they're not necessary for Live2LÖVE
-* {a,b} means there's both folder "a" and "b" with same folder structure
 ```
 
 This copying instructions assume the directory exists in Live2LÖVE. If it's not exist, create it!
 
-Copy the `framework` folder from Live2D to `framework` folder in Live2LÖVE (merge).  
-Copy the `include` **contents** from Live2D to `include/live2d` folder in Live2LÖVE.  
-Copy the `lib` folder from Live2D to `lib/live2d` folder in Live2LÖVE.  
+Copy the `Core` folder to `live2d/Core` folder in Live2LÖVE (merge).
 
 Once all set, you should be able to build the project with CMake:
 
