@@ -32,9 +32,9 @@
 
 // Lua
 extern "C" {
-#include <lua.h>
-#include <lualib.h>
-#include <lauxlib.h>
+#include "lua.h"
+#include "lualib.h"
+#include "lauxlib.h"
 }
 
 // Live2LOVE
@@ -43,9 +43,20 @@ extern "C" {
 // RefData
 #include "RefData.h"
 
+// Live2D
+#include "Effect/CubismBreath.hpp"
+#include "Id/CubismIdManager.hpp"
+#include "CubismDefaultParameterId.hpp"
+
 inline std::string fromCsmString(const Live2D::Cubism::Framework::csmString &str)
 {
 	return std::string(str.GetRawString(), (size_t) str.GetLength());
+}
+
+inline const Live2D::Cubism::Framework::CubismId *toCsmString(const std::string &str)
+{
+	Live2D::Cubism::Framework::csmString nstr(str.c_str(), str.length());
+	return Live2D::Cubism::Framework::CubismFramework::GetIdManager()->GetId(nstr);
 }
 
 namespace live2love
@@ -64,9 +75,9 @@ static int stencilFragRef = LUA_REFNIL;
 // Sort operator, for std::sort
 static bool compareDrawOrder(const Live2LOVEMesh *a, const Live2LOVEMesh *b)
 {
-	int da = a->drawData->getDrawOrder(*a->modelContext, a->drawContext);
-	int db = b->drawData->getDrawOrder(*b->modelContext, b->drawContext);
-	//return da == db ? a->drawDataIndex < b->drawDataIndex : da < db;
+	/*
+	int da = a->model->GetDrawableRenderOrders(
+	int db = b->drawData->getDrawOrder(*b->modelContext, b->drawContext);\
 	if (da == db)
 		if (a->partsIndex == b->partsIndex)
 			return a->drawDataIndex < b->drawDataIndex;
@@ -74,6 +85,8 @@ static bool compareDrawOrder(const Live2LOVEMesh *a, const Live2LOVEMesh *b)
 			return a->partsIndex < b->partsIndex;
 	else
 		return da < db;
+	*/
+	return a->renderOrder < b->renderOrder;
 }
 
 // Push the ByteData into stack.
@@ -104,13 +117,13 @@ Live2LOVE::Live2LOVE(lua_State *L, const void *buf, size_t size)
 , expression(nullptr)
 , eyeBlink(nullptr)
 , physics(nullptr)
+, pose(nullptr)
 , motionLoop("")
-, elapsedTime(0.0)
 , movementAnimation(true)
 , eyeBlinkMovement(true)
 {
-	constexpr uintptr_t MOC_ALIGN = Live2D::Cubism::Core::csmAlignofMoc - 1;
-	constexpr uintptr_t MODEL_ALIGN = Live2D::Cubism::Core::csmAlignofModel - 1;
+	constexpr uintptr_t MOC_ALIGN = csmAlignofMoc - 1;
+	constexpr uintptr_t MODEL_ALIGN = csmAlignofModel - 1;
 
 	// initialize clip fragment shader
 	if (stencilFragRef == LUA_REFNIL)
@@ -129,7 +142,7 @@ Live2LOVE::Live2LOVE(lua_State *L, const void *buf, size_t size)
 	}
 
 	// Init moc
-	moc = Live2D::Cubism::Framework::CubismMoc::Create((Live2D::Cubism::Framework::csmByte *) buf, size);
+	moc = CubismMoc::Create((csmByte *) buf, size);
 	if (moc == nullptr)
 		throw namedException("Failed to initialize moc");
 
@@ -137,14 +150,24 @@ Live2LOVE::Live2LOVE(lua_State *L, const void *buf, size_t size)
 	model = moc->CreateModel();
 	if (model == nullptr)
 		throw namedException("Failed to intialize model");
-
-	eyeBlink = Live2D::Cubism::Framework::CubismEyeBlink::Create();
-	breath = Live2D::Cubism::Framework::CubismBreath::Create();
+	
+	// Get model dimensions
+    csmVector2 tmpSizeInPixels;
+    csmVector2 tmpOriginInPixels;
+	csmReadCanvasInfo(model->GetModel(), &tmpSizeInPixels, &tmpOriginInPixels, &modelPixelUnits);
+	modelWidth = tmpSizeInPixels.X;
+	modelHeight = tmpSizeInPixels.Y;
+	modelOffX = tmpOriginInPixels.X;
+	modelOffY = tmpOriginInPixels.Y;
 
 	// Update model
 	model->Update();
+	model->SaveParameters();
 	// Setup mesh data
 	setupMeshData();
+	// Initialize default eye and breath
+	loadEyeBlink();
+	loadBreath();
 }
 
 Live2LOVE::~Live2LOVE()
@@ -157,12 +180,21 @@ Live2LOVE::~Live2LOVE()
 		delete mesh;
 	}
 
-	// Deleting null pointer is okay
-	Live2D::Cubism::Framework::CubismBreath::Delete(breath);
-	Live2D::Cubism::Framework::CubismEyeBlink::Delete(eyeBlink);
-	Live2D::Cubism::Framework::CubismPhysics::Delete(physics);
+	// Delete all motions
+	for (auto motion: motionList)
+		CubismMotion::Delete(motion.second);
+
+	// Delete all expressions
+	for (auto exprs: expressionList)
+		CubismExpressionMotion::Delete(exprs.second);
+
+	CSM_DELETE(motion);
+	CSM_DELETE(expression);
+	CubismBreath::Delete(breath);
+	CubismEyeBlink::Delete(eyeBlink);
+	CubismPhysics::Delete(physics);
 	moc->DeleteModel(model);
-	Live2D::Cubism::Framework::CubismMoc::Delete(moc);
+	CubismMoc::Delete(moc);
 }
 
 void Live2LOVE::setupMeshData()
@@ -172,6 +204,8 @@ void Live2LOVE::setupMeshData()
 	// Get drawable count
 	int drawableCount = model->GetDrawableCount();
 	meshData.reserve(drawableCount);
+	// Get render order
+	const csmInt32 *renderOrders = model->GetDrawableRenderOrders();
 	// Push newMesh
 	RefData::getRef(L, "love.graphics.newMesh");
 	
@@ -180,15 +214,18 @@ void Live2LOVE::setupMeshData()
 	{	
 		// Create new mesh object
 		Live2LOVEMesh *mesh = new Live2LOVEMesh;
+		mesh->model = model;
 		mesh->index = i; // assume 0-based ID
 		mesh->textureIndex = model->GetDrawableTextureIndices(i);
+		mesh->blending = model->GetDrawableBlendMode(i);
+		mesh->renderOrder = renderOrders[i];
 
 		// Create mesh table list
-		int numPoints = model->GetDrawableVertexCount(i);
-		int polygonCount = model->GetDrawableVertexIndexCount(i);
-		const Live2D::Cubism::Framework::csmUint16 *vertexMap = model->GetDrawableVertexIndices(i);
-		const Live2D::Cubism::Core::csmVector2 *uvmap = model->GetDrawableVertexUvs(i);
-		const Live2D::Cubism::Core::csmVector2 *points = model->GetDrawableVertexPositions(i);
+		int numPoints = mesh->numPoints = model->GetDrawableVertexCount(i);
+		int indexCount = model->GetDrawableVertexIndexCount(i);
+		const csmUint16 *vertexMap = model->GetDrawableVertexIndices(i);
+		const csmVector2 *uvmap = model->GetDrawableVertexUvs(i);
+		const csmVector2 *points = model->GetDrawableVertexPositions(i);
 		
 		// Build mesh
 		lua_pushvalue(L, -1); // love.graphics.newMesh
@@ -201,8 +238,8 @@ void Live2LOVE::setupMeshData()
 		// Set index map
 		lua_getfield(L, -1, "setVertexMap");
 		lua_pushvalue(L, -2);
-		Live2D::Cubism::Framework::csmUint16 *tempMap = createData<Live2D::Cubism::Framework::csmUint16>(L, polygonCount * 3);
-		memcpy(tempMap, vertexMap, polygonCount * sizeof(Live2D::Cubism::Framework::csmUint16) * 3);
+		csmUint16 *tempMap = createData<csmUint16>(L, indexCount);
+		memcpy(tempMap, vertexMap, indexCount * sizeof(csmUint16));
 		lua_pushstring(L, "uint16");
 		lua_call(L, 3, 0); // tempMap is no longer valid
 
@@ -215,10 +252,12 @@ void Live2LOVE::setupMeshData()
 			Live2LOVEMeshFormat& m = meshDataRaw[j];
 			// Mesh table format: {x, y, u, v, r, g, b, a}
 			// r, g, b will be 1
-			m.x = points[j].X;
-			m.y = points[j].Y;
+			// Textures in OpenGL are flipped but aren't in LOVE so the Y position is flipped
+			// to take that into account.
+			m.x = points[j].X * modelPixelUnits;
+			m.y = points[j].Y * -modelPixelUnits;
 			m.u = uvmap[j].X;
-			m.v = uvmap[j].Y;
+			m.v = 1.0f - uvmap[j].Y;
 			m.r = m.g = m.b = m.a = 255; // set later
 		}
 		mesh->tableRefID = RefData::setRef(L, -1); // Add FileData reference
@@ -230,8 +269,8 @@ void Live2LOVE::setupMeshData()
 		meshDataMap[fromCsmString(model->GetDrawableId(i)->GetString())] = mesh;
 	}
 
-	const Live2D::Cubism::Framework::csmInt32 *clipCount = model->GetDrawableMaskCounts();
-	const Live2D::Cubism::Framework::csmInt32 **clipMask = model->GetDrawableMasks();
+	const csmInt32 *clipCount = model->GetDrawableMaskCounts();
+	const csmInt32 **clipMask = model->GetDrawableMasks();
 
 	// Find clip ID list
 	for (int i = 0; i < drawableCount; i++)
@@ -248,51 +287,67 @@ void Live2LOVE::setupMeshData()
 
 void Live2LOVE::update(double dt)
 {
-	//elapsedTime = fmod((elapsedTime + dT), 31536000.0);
-	//live2d::UtSystem::setUserTimeMSec(((l2d_int64) (elapsedTime * 1000.0)));
-	double t = elapsedTime * 2 * PI;
 	// Motion update
 	if (motion)
 	{
 		model->LoadParameters();
 		if (motion->IsFinished() && motionLoop.length() > 0)
 			// Revert
-			motion->StartMotion(motionList[motionLoop], false, dt);
+			motion->StartMotion(motionList[motionLoop], false, 1.0f);
 
-		if (!motion->UpdateMotion(model, dt) && movementAnimation && eyeBlink && eyeBlinkMovement)
-			// Update eye blink
-			//eyeBlink->setParam(model);
-			eyeBlink->SetParameterIds(
-
-		model->saveParam();
+		if (!motion->UpdateMotion(model, dt) && movementAnimation)
+		{
+			if (eyeBlink && eyeBlinkMovement)
+				// Update eye blink
+				eyeBlink->UpdateParameters(model, dt);
+		}
+		model->SaveParameters();
 	}
+
 	// Expression update
-	if (expression) expression->updateParam(model);
+	if (expression)
+		expression->UpdateMotion(model, dt);
+
 	// Movement update
 	if (movementAnimation)
 	{
-		model->addToParamFloat("PARAM_ANGLE_X", (float) (15.0 * sin(t / 6.5345)), 0.5);
-		model->addToParamFloat("PARAM_ANGLE_Y", (float) (8.0 * sin(t / 3.5345)), 0.5);
-		model->addToParamFloat("PARAM_ANGLE_Z", (float) (10.0 * sin(t / 5.5345)), 0.5);
-		model->addToParamFloat("PARAM_BODY_ANGLE_X", (float) (4.0 * sin(t / 15.5345)), 0.5);
-		model->setParamFloat("PARAM_BREATH", (float) (0.5 + 0.5 * sin(t / 3.2345)), 1.0); // Override user-set value
+		// Breath update
+		if (breath)
+			breath->UpdateParameters(model, dt);
+
 		// Physics update
-		if (physics) physics->updateParam(model);
+		if (physics)
+			physics->Evaluate(model, dt);
 	}
+
+	if (pose)
+		pose->UpdateParameters(model, dt);
+
+	model->Update();
+
 	// If there's parameter change, set it
 	for (auto& list: postParamUpdateList)
 	{
-		model->setParamFloat(list.first.c_str(), list.second->first, list.second->second);
+		const CubismId *paramName = toCsmString(list.first);
+		model->SetParameterValue(model->GetParameterIndex(paramName), list.second->first, list.second->second);
+
 		delete list.second;
 		list.second = nullptr;
 	}
 	postParamUpdateList.clear();
+
 	// Update model
-	model->update();
+	model->Update();
+
+	// Get render orders
+	auto renderOrders = model->GetDrawableRenderOrders();
 
 	// Update mesh data
 	for (auto mesh: meshData)
 	{
+		// Set render order
+		mesh->renderOrder = renderOrders[mesh->index];
+
 		// Get mesh ref
 		RefData::getRef(L, mesh->meshRefID);
 		// Get "setVertices"
@@ -300,20 +355,17 @@ void Live2LOVE::update(double dt)
 		lua_pushvalue(L, -2);
 		// Get data mesh ref
 		RefData::getRef(L, mesh->tableRefID);
-		int meshLen;
-		double opacity =
-			((double) mesh->drawData->getOpacity(*mesh->modelContext, mesh->drawContext)) *
-			((double) mesh->partsContext->getPartsOpacity()) *
-			((double) mesh->drawContext->baseOpacity);
-		l2d_pointf *points = model->getTransformedPoints(mesh->drawDataIndex, &meshLen);
+		float visibility = model->GetDrawableDynamicFlagIsVisible(mesh->index) ? 1.0f : 0.0f;
+		float opacity = visibility * model->GetDrawableOpacity(mesh->index);
+		const csmVector2 *points = model->GetDrawableVertexPositions(mesh->index);
 
 		// Update
-		for (int i = 0; i < meshLen; i++)
+		for (int i = 0; i < mesh->numPoints; i++)
 		{
 			Live2LOVEMeshFormat& m = mesh->tablePointer[i];
-			m.x = points[i * 2 + 0];
-			m.y = points[i * 2 + 1];
-			m.a = (unsigned char) floor(opacity * 255.0);
+			m.x = points[i].X * modelPixelUnits;
+			m.y = points[i].Y * -modelPixelUnits;
+			m.a = (unsigned char) floor(opacity * 255.0f + 0.5f);
 		}
 
 		// Call setVertices
@@ -325,6 +377,12 @@ void Live2LOVE::update(double dt)
 
 void Live2LOVE::draw(double x, double y, double r, double sx, double sy, double ox, double oy, double kx, double ky)
 {
+	// Damn the name is too long
+	constexpr auto
+		NormalBlending = Rendering::CubismRenderer::CubismBlendMode_Normal,
+		AddBlending = Rendering::CubismRenderer::CubismBlendMode_Additive,
+		MultiplyBlending = Rendering::CubismRenderer::CubismBlendMode_Multiplicative;
+
 	if (!lua_checkstack(L, lua_gettop(L) + 24))
 		throw namedException("Internal error: cannot grow Lua stack size");
 
@@ -337,7 +395,9 @@ void Live2LOVE::draw(double x, double y, double r, double sx, double sy, double 
 	lua_pushstring(L, "alpha");
 	lua_pushstring(L, "alphamultiply");
 	lua_call(L, 2, 0);
-	int blendMode = live2d::DDTexture::COLOR_COMPOSITION_NORMAL; // alpha,alphamultiply
+
+	// Blending mode
+	auto blendMode = NormalBlending; // alpha,alphamultiply
 	// Get love.graphics.draw
 	RefData::getRef(L, "love.graphics.draw");
 	// List mesh data
@@ -369,7 +429,8 @@ void Live2LOVE::draw(double x, double y, double r, double sx, double sy, double 
 			lua_call(L, 2, 0); // love.graphics.stencil
 			stencilSet = true;
 		}
-		int meshBlendMode = (mesh->drawData->getOptionFlag() >> 1) & 3;
+
+		auto meshBlendMode = mesh->blending;
 		if (meshBlendMode != blendMode)
 		{
 			// Push love.graphics.setBlendMode
@@ -377,22 +438,21 @@ void Live2LOVE::draw(double x, double y, double r, double sx, double sy, double 
 			switch (blendMode = meshBlendMode)
 			{
 				default:
-				case live2d::DDTexture::COLOR_COMPOSITION_NORMAL:
+				case NormalBlending:
 				{
 					// Normal blending (alpha,alphamultiply)
 					lua_pushstring(L, "alpha");
 					lua_pushstring(L, "alphamultiply");
 					break;
 				}
-				case live2d::DDTexture::COLOR_COMPOSITION_SCREEN:
+				case AddBlending:
 				{
-					// Screen blending (add,alphamultiply)
-					// but why it should be "add" tho...
+					// Add blending (add,alphamultiply)
 					lua_pushstring(L, "add");
 					lua_pushstring(L, "alphamultiply");
 					break;
 				}
-				case live2d::DDTexture::COLOR_COMPOSITION_MULTIPLY:
+				case MultiplyBlending:
 				{
 					// Multiply bnending (multiply,premultiplied)
 					lua_pushstring(L, "multiply");
@@ -436,7 +496,7 @@ void Live2LOVE::setTexture(int live2dtexno, int loveimageidx)
 	// List mesh
 	for (auto mesh: meshData)
 	{
-		if (mesh->drawData->getTextureNo() == live2dtexno - 1)
+		if (mesh->textureIndex == live2dtexno - 1)
 		{
 			// Get mesh ref
 			RefData::getRef(L, mesh->meshRefID);
@@ -471,7 +531,8 @@ bool Live2LOVE::isEyeBlinkEnabled() const
 
 void Live2LOVE::setParamValue(const std::string& name, double value, double weight)
 {
-	model->setParamFloat(name.c_str(), (float) value, (float) weight);
+	const CubismId *paramName = CubismFramework::GetIdManager()->GetId(name.c_str());
+	model->SetParameterValue(model->GetParameterIndex(paramName), value, weight);
 }
 
 void Live2LOVE::setParamValuePost(const std::string& name, double value, double weight)
@@ -481,22 +542,39 @@ void Live2LOVE::setParamValuePost(const std::string& name, double value, double 
 
 void Live2LOVE::addParamValue(const std::string& name, double value, double weight)
 {
-	model->addToParamFloat(name.c_str(), (float) value, (float) weight);
+	const CubismId *paramName = CubismFramework::GetIdManager()->GetId(name.c_str());
+	model->AddParameterValue(paramName, (float) value, (float) weight);
 }
 
 void Live2LOVE::mulParamValue(const std::string& name, double value, double weight)
 {
-	model->multParamFloat(name.c_str(), (float) value, (float) weight);
+	const CubismId *paramName = CubismFramework::GetIdManager()->GetId(name.c_str());
+	model->MultiplyParameterValue(paramName, value, weight);
 }
 
 double Live2LOVE::getParamValue(const std::string& name) const
 {
-	return model->getParamFloat(name.c_str());
+	const CubismId *paramName = CubismFramework::GetIdManager()->GetId(name.c_str());
+	return model->GetParameterValue(paramName);
 }
 
-live2d::LDVector<live2d::ParamDefFloat*> *Live2LOVE::getParamInfoList()
+std::vector<Live2LOVEParamDef> Live2LOVE::getParamInfoList()
 {
-	return model->getModelImpl()->getParamDefSet()->getParamDefFloatList();
+	csmModel *mdl = model->GetModel();
+	int paramCount = csmGetParameterCount(mdl);
+	const char **paramIDs = csmGetParameterIds(mdl);
+	const float *minVals = csmGetParameterMinimumValues(mdl);
+	const float *maxVals = csmGetParameterMaximumValues(mdl);
+	const float *defVals = csmGetParameterDefaultValues(mdl);
+
+	// Initialize vector
+	std::vector<Live2LOVEParamDef> params;
+	params.reserve(paramCount);
+
+	for (int i = 0; i < paramCount; i++)
+		params.push_back({paramIDs[i], minVals[i], maxVals[i], defVals[i]});
+	
+	return params;
 }
 
 std::vector<const std::string*> Live2LOVE::getExpressionList() const
@@ -521,15 +599,19 @@ std::vector<const std::string*> Live2LOVE::getMotionList() const
 
 std::pair<float, float> Live2LOVE::getDimensions() const
 {
-	return std::pair<float, float>(model->getCanvasWidth(), model->getCanvasHeight());
+	return std::pair<float, float>(modelWidth, modelHeight);
 }
 
 void Live2LOVE::setMotion(const std::string& name, MotionModeID mode)
 {
 	// No motion? well load one first before using this.
-	if (!motion) throw namedException("No motion loaded!");
-	if (motionList.find(name) == motionList.end()) throw namedException("Motion not found");
-	motion->startMotion(motionList[name], false);
+	if (!motion)
+		throw namedException("No motion loaded!");
+	else if (motionList.find(name) == motionList.end())
+		throw namedException("Motion not found");
+
+	CubismMotion *targetMotion = motionList[name];
+	motion->StartMotion(targetMotion, false, targetMotion->GetFadeInTime());
 
 	// Check motion mode
 	if (mode == 1) motionLoop = name;
@@ -539,60 +621,157 @@ void Live2LOVE::setMotion(const std::string& name, MotionModeID mode)
 void Live2LOVE::setMotion()
 {
 	// clear motion
-	if (!motion) throw namedException("No motion loaded!");
+	if (!motion)
+		throw namedException("No motion loaded!");
+
 	motionLoop = "";
-	motion->stopAllMotions();
+	motion->StopAllMotions();
 }
 
 void Live2LOVE::setExpression(const std::string& name)
 {
 	// No expression? Load one first!
-	if (!expression) throw namedException("No expression loaded!");
-	if (expressionList.find(name) == expressionList.end()) throw namedException("Expression not found");
-	expression->startMotion(expressionList[name], false);
+	if (!expression)
+		throw namedException("No expression loaded!");
+	else if (expressionList.find(name) == expressionList.end())
+		throw namedException("Expression not found");
+
+	expression->StartMotion(expressionList[name], false, 1.0f);
 }
 
 void Live2LOVE::loadMotion(const std::string& name, const std::pair<double, double>& fade, const void *buf, size_t size)
 {
 	initializeMotion();
-	// Load file
-	live2d::AMotion *motion = live2d::Live2DMotion::loadMotion(buf, size);
-	if (motion == nullptr) throw namedException("Failed to load motion");
 
-	motion->setFadeIn(fade.first);
-	motion->setFadeOut(fade.second);
+	// Load file
+	CubismMotion *motion = CubismMotion::Create((csmByte *) buf, size);
+	if (motion == nullptr)
+		throw namedException("Failed to load motion");
+
+	motion->SetFadeInTime(fade.first);
+	motion->SetFadeOutTime(fade.second);
+
 	// Set motion
-	if (motionList.find(name) != motionList.end()) delete motionList[name];
+	if (motionList.find(name) != motionList.end())
+		CubismMotion::Delete(motionList[name]);
+
 	motionList[name] = motion;
 }
 
 void Live2LOVE::loadExpression(const std::string& name, const void *buf, size_t size)
 {
 	initializeExpression();
+
 	// Load file
-	live2d::framework::L2DExpressionMotion *expr = live2d::framework::L2DExpressionMotion::loadJson(buf, size);
+	CubismExpressionMotion *expr = CubismExpressionMotion::Create((csmByte *) buf, size);
 	if (expr == nullptr) throw namedException("Failed to load expression");
 
 	// Set expression
-	if (expressionList.find(name) != expressionList.end()) delete expressionList[name];
+	if (expressionList.find(name) != expressionList.end())
+		CubismExpressionMotion::Delete(expressionList[name]);
+
 	expressionList[name] = expr;
 }
 
 void Live2LOVE::loadPhysics(const void *buf, size_t size)
 {
 	// Load file
-	physics = live2d::framework::L2DPhysics::load(buf, size);
-	if (physics == nullptr) throw namedException("Failed to load physics");
+	if (physics)
+		CubismPhysics::Delete(physics);
+
+	physics = CubismPhysics::Create((csmByte *) buf, size);
+	if (physics == nullptr)
+		throw namedException("Failed to load physics");
 }
 
-inline void Live2LOVE::initializeMotion()
+void Live2LOVE::loadPose(const void *buf, size_t size)
 {
-	if (!motion) motion = new live2d::framework::L2DMotionManager();
+	if (pose)
+		CubismPose::Delete(pose);
+
+	pose = CubismPose::Create((csmByte *) buf, size);
+	if (pose == nullptr)
+		throw namedException("Failed to load pose");
 }
 
-inline void Live2LOVE::initializeExpression()
+void Live2LOVE::initializeMotion()
 {
-	if (!expression) expression = new live2d::framework::L2DMotionManager();
+	if (!motion)
+		motion = CSM_NEW CubismMotionManager();
+}
+
+void Live2LOVE::initializeExpression()
+{
+	if (!expression)
+		expression = CSM_NEW CubismMotionManager();
+}
+
+void Live2LOVE::loadEyeBlink(const std::vector<std::string> &names)
+{
+	if (!eyeBlink)
+		eyeBlink = CubismEyeBlink::Create();
+
+	csmVector<CubismIdHandle> tmpNames;
+	
+	for(const std::string &name: names)
+		tmpNames.PushBack(toCsmString(name));
+
+	eyeBlink->SetParameterIds(tmpNames);
+}
+
+void Live2LOVE::loadEyeBlink()
+{
+	if (!eyeBlink)
+		eyeBlink = CubismEyeBlink::Create();
+
+	static bool idInitialized = false;
+	static csmVector<CubismIdHandle> eyeDefault;
+
+	if (!idInitialized)
+	{
+		eyeDefault.PushBack(toCsmString(DefaultParameterId::ParamEyeLOpen));
+		eyeDefault.PushBack(toCsmString(DefaultParameterId::ParamEyeROpen));
+		idInitialized = true;
+	}
+
+	eyeBlink->SetParameterIds(eyeDefault);
+}
+
+void Live2LOVE::loadBreath(const std::vector<Live2LOVEBreath> &names)
+{
+	if (!breath)
+		breath = CubismBreath::Create();
+
+	csmVector<CubismBreath::BreathParameterData> tmpNames;
+	
+	for(const Live2LOVEBreath &param: names)
+		tmpNames.PushBack({
+			toCsmString(param.paramName),
+			(float) param.offset,
+			(float) param.peak,
+			(float) param.cycle,
+			(float) param.weight
+		});
+
+	breath->SetParameters(tmpNames);
+}
+
+void Live2LOVE::loadBreath()
+{
+	if (!breath)
+		breath = CubismBreath::Create();
+
+	static bool idInitialized = false;
+	static csmVector<CubismBreath::BreathParameterData> breathDefault;
+
+	if (!idInitialized)
+	{
+		breathDefault.PushBack(CubismBreath::BreathParameterData(toCsmString(DefaultParameterId::ParamAngleX), 0.0f, 15.0f, 6.5345f, 0.5f));
+		breathDefault.PushBack(CubismBreath::BreathParameterData(toCsmString(DefaultParameterId::ParamAngleY), 0.0f, 8.0f, 3.5345f, 0.5f));
+		breathDefault.PushBack(CubismBreath::BreathParameterData(toCsmString(DefaultParameterId::ParamAngleZ), 0.0f, 10.0f, 5.5345f, 0.5f));
+		breathDefault.PushBack(CubismBreath::BreathParameterData(toCsmString(DefaultParameterId::ParamBodyAngleX), 0.0f, 4.0f, 15.5345f, 0.5f));
+		idInitialized = true;
+	}
 }
 
 int Live2LOVE::drawStencil(lua_State *L)

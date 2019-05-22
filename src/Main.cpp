@@ -20,9 +20,9 @@
 
 // Lua
 extern "C" {
-#include <lua.h>
-#include <lualib.h>
-#include <lauxlib.h>
+#include "lua.h"
+#include "lualib.h"
+#include "lauxlib.h"
 }
 
 // Live2LOVE
@@ -79,6 +79,14 @@ class Live2LOVEAllocator: public Live2D::Cubism::Framework::ICubismAllocator
 		Deallocate(preamble[-1]);
 	}
 };
+
+// Stub
+void Live2D::Cubism::Framework::Rendering::CubismRenderer::StaticRelease() {}
+
+inline void lua_pushstring(lua_State *L, const std::string &str)
+{
+	lua_pushlstring(L, str.c_str(), str.length());
+}
 
 // idx must be positive
 inline const void *getLoveData(lua_State *L, int idx, size_t &size)
@@ -310,38 +318,30 @@ int Live2LOVE_getParamInfoList(lua_State *L)
 	// Get udata
 	Live2LOVE *l2l = *(Live2LOVE**)luaL_checkudata(L, 1, "Live2LOVE");
 	// Get list
-	auto x = l2l->getParamInfoList();
+	std::vector<Live2LOVEParamDef> x = l2l->getParamInfoList();
 
-	lua_createtable(L, x->size(), 0);
+	lua_createtable(L, x.size(), 0);
 	int i = 0;
-	for (auto& y: *x)
+	for (Live2LOVEParamDef &y: x)
 	{
 		lua_createtable(L, 0, 4);
 		lua_pushstring(L, "name");
-		lua_pushstring(L, y->getParamID()->toChar());
+		lua_pushstring(L, y.name);
 		lua_rawset(L, -3);
 		lua_pushstring(L, "min");
-		lua_pushnumber(L, y->getMinValue());
+		lua_pushnumber(L, y.min);
 		lua_rawset(L, -3);
 		lua_pushstring(L, "max");
-		lua_pushnumber(L, y->getMaxValue());
+		lua_pushnumber(L, y.max);
 		lua_rawset(L, -3);
 		lua_pushstring(L, "default");
-		lua_pushnumber(L, y->getDefaultValue());
+		lua_pushnumber(L, y.def);
 		lua_rawset(L, -3);
 		lua_rawseti(L, -2, ++i);
 	}
 
 	return 1;
 }
-
-/*
-static std::map<std::string, int> motionMapMode = {
-	{"normal", 0},
-	{"loop", 1},
-	{"preserve", 2}
-};
-*/
 
 static std::vector<std::string> motionStringMode = {"normal", "loop", "preserve"};
 
@@ -586,6 +586,50 @@ int Live2LOVE_isEyeBlinkEnabled(lua_State *L)
 	return 1;
 }
 
+int Live2LOVE_loadEyeBlink(lua_State *L)
+{
+	Live2LOVE *l2l = *(Live2LOVE**)luaL_checkudata(L, 1, "Live2LOVE");
+
+	if (lua_istable(L, 2))
+	{
+		size_t len = lua_objlen(L, 2);
+		std::vector<std::string> eyeBlinks;
+
+		for (size_t i = 0; i < len; i++)
+		{
+			lua_pushinteger(L, i);
+			lua_rawget(L, 2);
+
+			if (lua_isstring(L, -1))
+			{
+				size_t strLen;
+				const char *str = lua_tolstring(L, -1, &strLen);
+				eyeBlinks.push_back(std::string(str, strLen));
+			}
+		}
+
+		if (eyeBlinks.size() > 0)
+			l2l->loadEyeBlink(eyeBlinks);
+	}
+	else
+		l2l->loadEyeBlink();
+
+	return 0;
+}
+
+
+int Live2LOVE_loadPose(lua_State *L)
+{
+	size_t poseLen;
+	// Get udata
+	Live2LOVE *l2l = *(Live2LOVE**)luaL_checkudata(L, 1, "Live2LOVE");
+	// Get name and path
+	const void *pose = argToData(L, 2, poseLen);
+	L2L_TRYWRAP(l2l->loadPose(pose, poseLen););
+
+	return 0;
+}
+
 int Live2LOVE___gc(lua_State *L)
 {
 	Live2LOVE **x = (Live2LOVE**)luaL_checkudata(L, 1, "Live2LOVE");
@@ -614,6 +658,8 @@ static luaL_Reg Live2LOVE_methods[] = {
 	{"loadMotion", Live2LOVE_loadMotion},
 	{"loadExpression", Live2LOVE_loadExpression},
 	{"loadPhysics", Live2LOVE_loadPhysics},
+	{"loadPose", Live2LOVE_loadPose},
+	{"initializeEyeBlink", Live2LOVE_loadEyeBlink},
 	{"getParamValue", Live2LOVE_getParamValue},
 	{"getParamInfoList", Live2LOVE_getParamInfoList},
 	{"getMesh", Live2LOVE_getMesh},
@@ -663,19 +709,9 @@ const void *loadFileData(lua_State *L, const std::string& path, size_t &fileSize
 	return getLoveData(L, lua_gettop(L), fileSize);
 }
 
-// Live2D JSON parser seems to append "garbage"
-// (many "/"), so this code is used to fix it.
-const char *fixJsonPaths(const char *src)
-{
-	if (strstr(src, "//") == src)
-	{}
-	return nullptr;
-}
-
 // Load model file (full)
 int Live2LOVE_Live2LOVE_full(lua_State *L)
 {
-	// Checkstack
 	luaL_checkstack(L, lua_gettop(L) + 24, "Internal error: cannot grow Lua stack size");
 	size_t fileLen, dataSize;
 	const char *file = luaL_checklstring(L, 1, &fileLen);
@@ -695,7 +731,7 @@ int Live2LOVE_Live2LOVE_full(lua_State *L)
 		luaL_error(L, "Root is not an object");
 
 	auto &root = json.get<picojson::object>();
-
+	
 	// Get dir path
 	std::string dir = "";
 	{
@@ -704,27 +740,50 @@ int Live2LOVE_Live2LOVE_full(lua_State *L)
 			dir = filename.substr(0, last + 1);
 	}
 
-	// Load model file
-	if (root.count("model") == 0)
-		luaL_error(L, "\"model\" field is missing");
+	// Check version
+	if (root.count("Version") == 0)
+		luaL_error(L, "\"Version\" field is missing");
 
-	auto &model = root["model"];
-	if (!model.is<std::string>())
-		luaL_error(L, "\"model\" field is not a string");
+	auto &versionNum = root["Version"];
+	if (!versionNum.is<double>())
+		luaL_error(L, "\"Version\" field is not a number");
 
+	double version = versionNum.get<double>();
+	if (abs(version - 3.0) > 0.001)
+		luaL_error(L, "Unknown version");
+
+	// Get file reference
+	if (root.count("FileReferences") == 0)
+		luaL_error(L, "\"FileReferences\" field is missing");
+
+	auto &fileReferencesArr = root["FileReferences"];
+	if (!fileReferencesArr.is<picojson::object>())
+		luaL_error(L, "\"FileReferences\" field is not an object");
+
+	picojson::object &fileRef = fileReferencesArr.get<picojson::object>();
+
+	// Check "Moc" field
+	if (fileRef.count("Moc") == 0)
+		luaL_error(L, "\"Moc\" field is missing");
+
+	auto &mocStr = fileRef["Moc"];
+	if (!mocStr.is<std::string>())
+		luaL_error(L, "\"Moc\" field is not a string");
+
+	// Load model
 	Live2LOVE *l2l = nullptr;
 	size_t modelSize;
-	const void *modelData = loadFileData(L, dir + model.get<std::string>(), modelSize);
+	const void *modelData = loadFileData(L, dir + mocStr.get<std::string>(), modelSize);
 	L2L_TRYWRAP(l2l = new Live2LOVE(L, modelData, modelSize););
 
 	// Textures
-	if (root.count("textures") != 0)
+	if (fileRef.count("Textures") > 0)
 	{
-		auto &textures = root["textures"];
+		auto &textures = fileRef["Textures"];
 		if (!textures.is<picojson::array>())
 		{
 			delete l2l;
-			luaL_error(L, "\"textures\" is not array");
+			luaL_error(L, "\"Textures\" is not array");
 		}
 
 		// Check love.graphics.newImage settings
@@ -744,11 +803,12 @@ int Live2LOVE_Live2LOVE_full(lua_State *L)
 		auto &tex = textures.get<picojson::array>();
 		for (int i = 0; i < tex.size(); i++)
 		{
+			int top = lua_gettop(L);
 			auto &strpathval = tex[i];
 			if (!strpathval.is<std::string>())
 			{
 				delete l2l;
-				luaL_error(L, "\"textures\"[%d] is not a string", i);
+				luaL_error(L, "\"Textures\"[%d] is not a string", i);
 			}
 
 			lua_pushvalue(L, -1);
@@ -763,7 +823,7 @@ int Live2LOVE_Live2LOVE_full(lua_State *L)
 			// Call love.graphics.newImage(texPath, {mipmaps = true})
 			lua_call(L, 2, 1);
 			l2l->setTexture(i + 1, lua_gettop(L));
-			lua_pop(L, 1);
+			lua_settop(L, top);
 		}
 		lua_pop(L, 2);
 	}
@@ -772,23 +832,23 @@ int Live2LOVE_Live2LOVE_full(lua_State *L)
 	try
 	{
 		// Expressions
-		if (root.count("expressions"))
+		if (fileRef.count("Expressions"))
 		{
-			auto &expressionList = root["expressions"].get<picojson::array>();
+			picojson::array &expressionList = fileRef["Expressions"].get<picojson::array>();
 			std::string defaultExpr = "";
 
 			// Loop expressions
 			for (int i = 0; i < expressionList.size(); i++)
 			{
-				auto &v = expressionList[i].get<picojson::object>();
-				std::string exprName = v["name"].get<std::string>();
+				picojson::object &v = expressionList[i].get<picojson::object>();
+				std::string exprName = v["Name"].get<std::string>();
 
 				if (defaultExpr.length() == 0 && exprName.find("default") != std::string::npos)
 					defaultExpr = exprName;
 
 				// Load
 				size_t exprSize;
-				const void *expr = loadFileData(L, dir + v["file"].get<std::string>(), exprSize);
+				const void *expr = loadFileData(L, dir + v["File"].get<std::string>(), exprSize);
 				l2l->loadExpression(exprName, expr, exprSize);
 				lua_pop(L, 1);
 			}
@@ -799,16 +859,14 @@ int Live2LOVE_Live2LOVE_full(lua_State *L)
 		}
 
 		// Motion
-		if (root.count("motions"))
+		if (fileRef.count("Motions"))
 		{
-			std::string idleMotion;
-			for (auto& x: root["motions"].get<picojson::object>())
+			std::string idleMotion = "";
+
+			for (auto& x: fileRef["Motions"].get<picojson::object>())
 			{
 				std::string name = x.first;
 				auto& motionObject = x.second.get<picojson::array>();
-
-				if (idleMotion.length() == 0 && name.find("idle") == 0)
-					idleMotion = name;
 
 				if (motionObject.size() > 1)
 				{
@@ -818,27 +876,27 @@ int Live2LOVE_Live2LOVE_full(lua_State *L)
 						auto &motionInfo = motionObject[j - 1].get<picojson::object>();
 						std::string mName = name + ":" + std::to_string(j);
 
-						if (idleMotion.length() == 0 && mName.find("idle") == 0)
+						if (idleMotion.length() == 0 && (mName.find("idle") == 0 || mName.find("Idle") == 0))
 							idleMotion = mName;
 
-						double fadeIn = 1000;
-						if (motionInfo.count("fade_in"))
+						double fadeIn = 1.0;
+						if (motionInfo.count("FadeInTime"))
 						{
-							auto &fadeInVal = motionInfo["fade_in"];
+							auto &fadeInVal = motionInfo["FadeInTime"];
 							if (fadeInVal.is<double>())
 								fadeIn = fadeInVal.get<double>();
 						}
 
-						double fadeOut = 1000;
-						if (motionInfo.count("fade_out"))
+						double fadeOut = 1.0;
+						if (motionInfo.count("FadeOutTime"))
 						{
-							auto &fadeOutVal = motionInfo["fade_out"];
+							auto &fadeOutVal = motionInfo["FadeInTime"];
 							if (fadeOutVal.is<double>())
 								fadeOut = fadeOutVal.get<double>();
 						}
 
 						size_t motionSize;
-						const void *motionData = loadFileData(L, dir + motionInfo["file"].get<std::string>(), motionSize);
+						const void *motionData = loadFileData(L, dir + motionInfo["File"].get<std::string>(), motionSize);
 						l2l->loadMotion(
 							mName,
 							std::pair<double, double>(fadeIn, fadeOut),
@@ -851,27 +909,27 @@ int Live2LOVE_Live2LOVE_full(lua_State *L)
 				{
 					auto &motionInfo = motionObject[0].get<picojson::object>();
 
-					if (idleMotion.length() == 0 && name.find("idle") == 0)
+					if (idleMotion.length() == 0 && (name.find("idle") == 0 || name.find("Idle") == 0))
 						idleMotion = name;
 
-					double fadeIn = 1000;
-					if (motionInfo.count("fade_in"))
+					double fadeIn = 1.0;
+					if (motionInfo.count("FadeInTime"))
 					{
-						auto &fadeInVal = motionInfo["fade_in"];
+						auto &fadeInVal = motionInfo["FadeInTime"];
 						if (fadeInVal.is<double>())
 							fadeIn = fadeInVal.get<double>();
 					}
 
-					double fadeOut = 1000;
-					if (motionInfo.count("fade_out"))
+					double fadeOut = 1.0;
+					if (motionInfo.count("FadeOutTime"))
 					{
-						auto &fadeOutVal = motionInfo["fade_out"];
+						auto &fadeOutVal = motionInfo["FadeOutTime"];
 						if (fadeOutVal.is<double>())
 							fadeOut = fadeOutVal.get<double>();
 					}
 
 					size_t motionSize;
-					const void *motionData = loadFileData(L, dir + motionInfo["file"].get<std::string>(), motionSize);
+					const void *motionData = loadFileData(L, dir + motionInfo["File"].get<std::string>(), motionSize);
 
 					// Load single motion.
 					l2l->loadMotion(
@@ -889,15 +947,28 @@ int Live2LOVE_Live2LOVE_full(lua_State *L)
 		}
 
 		// Physics
-		if (root.count("physics"))
+		if (fileRef.count("Physics") > 0)
 		{
-			auto &physicsInfo = root["physics"];
+			auto &physicsInfo = fileRef["Physics"];
 			if (physicsInfo.is<std::string>())
 			{
 				// Load physics
 				size_t physicsSize;
 				const void *physics = loadFileData(L, dir + physicsInfo.get<std::string>(), physicsSize);
 				l2l->loadPhysics(physics, physicsSize);
+				lua_pop(L, 1);
+			}
+		}
+		
+		// Load pose
+		if (fileRef.count("Pose") > 0)
+		{
+			auto &poseData = fileRef["Pose"];
+			if (poseData.is<std::string>())
+			{
+				size_t poseSize;
+				const void *pose = loadFileData(L, dir + poseData.get<std::string>(), poseSize);
+				l2l->loadPose(pose, poseSize);
 				lua_pop(L, 1);
 			}
 		}
@@ -908,9 +979,55 @@ int Live2LOVE_Live2LOVE_full(lua_State *L)
 		luaL_error(L, e.what());
 	}
 
+	// Groups like EyeBlink
+	if (root.count("Groups") > 0)
+	{
+		auto &groupsInfo = root["Groups"];
+		if (groupsInfo.is<picojson::array>())
+		{
+			for (auto &group: groupsInfo.get<picojson::array>())
+			{
+				if (group.is<picojson::object>())
+				{
+					picojson::object &groupObj = group.get<picojson::object>();
+
+					if (groupObj.count("Name") > 0 && groupObj.count("Target") > 0 && groupObj.count("Ids") > 0)
+					{
+						auto &target = groupObj["Target"];
+
+						if (target.is<std::string>() && target.get<std::string>().find("Parameter") == 0)
+						{
+							auto &targetName = groupObj["Name"];
+							auto &idsArray = groupObj["Ids"];
+
+							if (targetName.is<std::string>() && idsArray.is<picojson::array>())
+							{
+								std::string &tgtName = targetName.get<std::string>();
+
+								if (tgtName.find("EyeBlink") == 0)
+								{
+									std::vector<std::string> eyeBlinks;
+
+									for (auto &id: idsArray.get<picojson::array>())
+									{
+										if (id.is<std::string>())
+											eyeBlinks.push_back(id.get<std::string>());
+									}
+
+									if (eyeBlinks.size() > 0)
+										l2l->loadEyeBlink(eyeBlinks);
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
 	// New user data
 	Live2LOVE **ptr = (Live2LOVE**)lua_newuserdata(L, sizeof(Live2LOVE*));
-	l2l->model->saveParam();
+	l2l->model->SaveParameters();
 	*ptr = l2l;
 	luaL_getmetatable(L, "Live2LOVE");
 	lua_setmetatable(L, -2);
@@ -919,7 +1036,13 @@ int Live2LOVE_Live2LOVE_full(lua_State *L)
 	return 1;
 }
 
-extern "C" int LUALIB_API luaopen_Live2LOVE(lua_State *L)
+#ifdef _WIN32
+#define EXPORT_SIGNATURE __declspec(dllexport)
+#else
+#define EXPORT_SIGNATURE
+#endif
+
+extern "C" int EXPORT_SIGNATURE luaopen_Live2LOVE(lua_State *L)
 {
 	// Initialize Live2D
 	if (Live2D::Cubism::Framework::CubismFramework::IsStarted() == false)
@@ -1040,10 +1163,15 @@ extern "C" int LUALIB_API luaopen_Live2LOVE(lua_State *L)
 	lua_pushcfunction(L, Live2LOVE_Live2LOVE_full);
 	lua_rawset(L, -3);
 	lua_pushstring(L, "_VERSION");
-	lua_pushstring(L, "0.5.0");
+	lua_pushstring(L, "0.6.0");
 	lua_rawset(L, -3);
+
+	// Live2D version
+	char vertemp[64];
+	Live2D::Cubism::Core::csmVersion version = Live2D::Cubism::Core::csmGetVersion();
+	sprintf(vertemp, "%d.%d.%d", (version & 0xFF000000) >> 24, (version >> 16) & 0xFF, version & 0xFFFF);
 	lua_pushstring(L, "Live2DVersion");
-	lua_pushstring(L, live2d::Live2D::getVersionStr());
+	lua_pushstring(L, vertemp);
 	lua_rawset(L, -3);
 	return 1;
 }

@@ -14,7 +14,7 @@ if(${CMAKE_SOURCE_DIR} STREQUAL ${CMAKE_BINARY_DIR})
 endif()
 
 # Check Live2D source/header files
-if(NOT EXISTS "live2d/Core/include/Live2DCubismCore.h")
+if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/live2d/Core/include/Live2DCubismCore.h")
 	message(FATAL_ERROR "Live2D Cubism 3 SDK for Native is missing!")
 endif()
 
@@ -57,7 +57,6 @@ set(LIVE2D_CUBISM3_FRAMEWORK
     live2d/Framework/src/Model/CubismModel.cpp
     live2d/Framework/src/Model/CubismModelUserData.cpp
     live2d/Framework/src/Model/CubismModelUserDataJson.cpp
-    live2d/Framework/src/Model/CubismUserModel.cpp
     live2d/Framework/src/Model/CubismMoc.cpp
 
     live2d/Framework/src/Motion/CubismExpressionMotion.cpp
@@ -92,6 +91,8 @@ else()
 	add_library(Live2LOVE STATIC ${LIVE2LOVE_SOURCE_FILES} ${LIVE2D_CUBISM3_FRAMEWORK})
 endif()
 
+set_target_properties(Live2LOVE PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
 # According to Core CMakeLists.txt, this shouldn't be "OFF" if there are other deps
 if(NOT ${CSM_CORE_DEPS} STREQUAL "OFF")
 	add_dependencies(Live2LOVE ${CSM_CORE_DEPS})
@@ -104,16 +105,18 @@ if(MSVC)
 
 	# Select correct MSVC version
 	if((${MSVC_VERSION} EQUAL 1900) OR (${MSVC_VERSION} GREATER 1900))
-		set(_LIVE2LOVE_MSVC_LINK v140)
+		set(_LIVE2LOVE_MSVC_LINK 140)
 	else()
-		set(_LIVE2LOVE_MSVC_LINK v120)
+		set(_LIVE2LOVE_MSVC_LINK 120)
 	endif()
 
 	# Is it 64-bit build?
 	if(CMAKE_SIZEOF_VOID_P EQUAL 8)
 		set(_LIVE2LOVE_WINARCH x86_64)
+		target_link_libraries(Live2LOVE ${CMAKE_CURRENT_SOURCE_DIR}/lib/Win32/lua51_x64.lib)
 	else()
 		set(_LIVE2LOVE_WINARCH x86)
+		target_link_libraries(Live2LOVE ${CMAKE_CURRENT_SOURCE_DIR}/lib/Win32/lua51.lib)
 	endif()
 
 	# Are we building with MT switch?
@@ -131,11 +134,20 @@ if(MSVC)
 	target_compile_options(Live2LOVE PUBLIC "$<$<CONFIG:RELWITHDEBINFO>:${_LIVE2LOVE_RELEASE_OPTION}>")
 	target_compile_options(Live2LOVE PUBLIC "$<$<CONFIG:MINSIZEREL>:${_LIVE2LOVE_RELEASE_OPTION}>")
 	target_link_libraries(Live2LOVE
-		debug live2d/Core/lib/windows/${_LIVE2LOVE_WINARCH}/${_LIVE2LOVE_MSVC_LINK}/Live2DCubismCore_${_LIVE2LOVE_CRT_TYPE}d.lib
-		optimized live2d/Core/lib/windows/${_LIVE2LOVE_WINARCH}/${_LIVE2LOVE_MSVC_LINK}/Live2DCubismCore_${_LIVE2LOVE_CRT_TYPE}.lib
+		debug ${CMAKE_CURRENT_SOURCE_DIR}/live2d/Core/lib/windows/${_LIVE2LOVE_WINARCH}/${_LIVE2LOVE_MSVC_LINK}/Live2DCubismCore_${_LIVE2LOVE_CRT_TYPE}d.lib
+		optimized ${CMAKE_CURRENT_SOURCE_DIR}/live2d/Core/lib/windows/${_LIVE2LOVE_WINARCH}/${_LIVE2LOVE_MSVC_LINK}/Live2DCubismCore_${_LIVE2LOVE_CRT_TYPE}.lib
 	)
 else()
-	target_link_libraries(Live2LOVE ${CSM_CORE_LIBS})
+	find_package(Lua 5.1 EXACT REQUIRED)
+	target_include_directories(Live2LOVE PRIVATE ${LUA_INCLUDE_DIR})
+	
+	if(UNIX AND NOT IOS AND NOT RPI AND NOT ANDROID)
+		# Unfortunately libLive2DCubismCore.a (provided by ${CSM_CORE_LIBS}) is not compiled with fPIC
+		# so we can't link with it.
+		target_link_libraries(Live2LOVE ${LUA_LIBRARIES} ${CMAKE_CURRENT_SOURCE_DIR}/live2d/Core/dll/linux/x86_64/libLive2DCubismCore.so)
+	else()
+		target_link_libraries(Live2LOVE ${CSM_CORE_LIBS} ${LUA_LIBRARIES})
+	endif()
 endif()
 
 target_include_directories(Live2LOVE PRIVATE include live2d/Framework/src ${CSM_CORE_INCLUDE_DIR})

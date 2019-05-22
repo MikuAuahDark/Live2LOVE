@@ -1,4 +1,4 @@
--- Copyright (c) 2039 Dark Energy Processor Corporation
+-- Copyright (c) 2040 Dark Energy Processor Corporation
 --
 -- This software is provided 'as-is', without any express or implied
 -- warranty.  In no event will the authors be held liable for any damages
@@ -16,28 +16,36 @@
 --    misrepresented as being the original software.
 -- 3. This notice may not be removed or altered from any source distribution.
 
--- Example Live2LOVE using Miku model file
+-- Example Live2LOVE
 local love = require("love")
 local Live2LOVE = require("Live2LOVE")
-local mikuModel, mikuMotion
+local modelObj, modelMotion, modelMesh
 local motionStr = "List of motions (press key number to change):\n"
+local modelMeshDrawIdx = 0
+
+print("Live2D Version "..Live2LOVE.Live2DVersion)
 
 function love.load()
 	-- Load model. loadModel expects model definition (JSON file)
-	mikuModel = Live2LOVE.loadModel("miku/miku.model.json")
+	--modelObj = Live2LOVE.loadModel("rev/model.model3.json")
+	modelObj = Live2LOVE.loadModel("Res/Haru/Haru.model3.json")
 	-- Get list of motions
-	mikuMotion = mikuModel:getMotionList()
+	modelMotion = modelObj:getMotionList()
 	-- Format motions. Faster & better approach is possible to handle the strings.
 	-- Note that the keyboard input only supports 10 keys (1-9, 0)
 	for i = 1, 10 do
-		if not(mikuMotion[i]) then break end
-		motionStr = motionStr..string.format("%d. %s\n", i % 10, mikuMotion[i])
+		if not(modelMotion[i]) then break end
+		motionStr = motionStr..string.format("%d. %s\n", i % 10, modelMotion[i])
 	end
+	print(string.format("Dimensions %gx%g", modelObj:getDimensions()))
+	
+	-- Get model mesh
+	modelMesh = modelObj:getMesh()
 end
 
 function love.update(dt)
 	-- Update model
-	mikuModel:update(dt)
+	modelObj:update(dt)
 end
 
 function love.draw()
@@ -46,7 +54,11 @@ function love.draw()
 	-- This include transformation, shader, colors, FBOs, ... except blend modes.
 	-- This is because the model is rendered entirely with LOVE built-in Mesh object
 	-- instead of Live2d-supplied rendering function.
-	mikuModel:draw(0, 0, 0, 0.8, 0.8)
+	if modelMeshDrawIdx > 0 and love.keyboard.isDown("return") == false then
+		love.graphics.draw(modelMesh[modelMeshDrawIdx], 400, 600, 0, 0.2, 0.2)
+	else
+		modelObj:draw(400, 600, 0, 0.2, 0.2)
+	end
 	-- Draw information
 	local stats = love.graphics.getStats()
 	love.graphics.print(string.format(
@@ -58,17 +70,25 @@ function love.draw()
 	))
 	-- Draw motion list string
 	love.graphics.print(motionStr, 0, 50)
+	love.graphics.print(modelMeshDrawIdx, 2, 600-16)
 end
 
 function love.keyreleased(key)
 	-- Only accept key numbers (not numlock one)
 	local keynum = tonumber(key)
-	if not(keynum) then return end
-	if keynum < 0 and keynum > 9 then return end
-	if keynum == 0 then keynum = 10 end
-	
-	-- Play just once
-	if mikuMotion[keynum] then
-		mikuModel:setMotion(mikuMotion[keynum], "normal")
+	if not(keynum) then
+		if key == "left" then
+			modelMeshDrawIdx = (modelMeshDrawIdx - 1) % (#modelMesh + 1)
+		elseif key == "right" then
+			modelMeshDrawIdx = (modelMeshDrawIdx + 1) % (#modelMesh + 1)
+		end
+	else
+		if keynum < 0 and keynum > 9 then return end
+		if keynum == 0 then keynum = 10 end
+		
+		-- Play just once
+		if modelMotion[keynum] then
+			modelObj:setMotion(modelMotion[keynum], "normal")
+		end
 	end
 end

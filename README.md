@@ -20,11 +20,9 @@ The Lua include file assume it's built against LuaJIT 2.0.5 (LÖVE for Windows).
 Compiling
 ---------
 
-This is build instruction for Windows and Android. iOS build instruction needs contributions.
+You need [CMake](https://cmake.org/) to generate the project. Recent version is strongly recommended, CMake 3.6 is minimum.
 
-You need [CMake](https://cmake.org/) to generate the project. Recent version is strongly recommended.
-
-You need the Live2D Cubism SDK v2.1 as described above. Your downloaded zip should have this structure
+You need the Live2D Cubism 3 SDK for Native as described above. Your downloaded zip should have this structure
 
 ```
 Cubism3SDKforNative-<version>
@@ -54,6 +52,20 @@ Build Live2LOVE.lib (static library)
 cmake -T v120 -H. -Bbuild -DBUILD_SHARED_LIBS=0
 cmake --build build --config Release
 ```
+
+### Linux
+
+**Note: Only 64-bit target is supported!**
+
+Build libLive2LOVE.so
+
+```
+cmake -Bbuild -H. -DBUILD_SHARED_LIBS=1
+cmake --build build --config Release
+```
+
+Note that `libLive2LOVE.so` depends on `libLive2DCubismCore.so`. Linking to `libLive2DCubismCore.a` is currently
+unsupported as Live2LOVE requires `-fPIC` but their static library aren't compiled with such option.
 
 ### Android
 
@@ -105,4 +117,3 @@ This LÖVE library is licensed under zLib license, excluding the Live2D include 
 **Games/things released with this library is subject to Live2D licensing!**
 
 PicoJSON is licensed under 2-clause BSD license.
-

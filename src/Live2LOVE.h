@@ -40,13 +40,18 @@ extern "C" {
 // Live2D Framework
 #include "Effect/CubismBreath.hpp"
 #include "Effect/CubismEyeBlink.hpp"
+#include "Effect/CubismPose.hpp"
 #include "Model/CubismMoc.hpp"
 #include "Model/CubismModel.hpp"
+#include "Motion/CubismExpressionMotion.hpp"
+#include "Motion/CubismMotion.hpp"
 #include "Motion/CubismMotionManager.hpp"
 #include "Physics/CubismPhysics.hpp"
 
 namespace live2love
 {
+	using namespace Live2D::Cubism::Core;
+	using namespace Live2D::Cubism::Framework;
 	typedef std::runtime_error namedException;
 	constexpr double PI = 3.14159265358979323846264338327950288;
 
@@ -71,6 +76,14 @@ namespace live2love
 		int index;
 		// Texture index
 		int textureIndex;
+		// Amount of vertices
+		int numPoints;
+		// Render order
+		int renderOrder;
+		// Blending mode
+		Rendering::CubismRenderer::CubismBlendMode blending;
+		// Model object
+		CubismModel *model;
 		// Mesh object reference and mesh table reference
 		int meshRefID, tableRefID;
 		Live2LOVEMeshFormat *tablePointer;
@@ -81,7 +94,13 @@ namespace live2love
 	struct Live2LOVEParamDef
 	{
 		std::string name;
-		double min, max;
+		double min, max, def;
+	};
+
+	struct Live2LOVEBreath
+	{
+		std::string paramName;
+		double offset, peak, cycle, weight;
 	};
 
 	// Live2LOVE model object
@@ -89,25 +108,24 @@ namespace live2love
 	{
 		// This is pretty much self-explanatory
 		//uint8_t *mocFreeThis;
-		Live2D::Cubism::Framework::CubismMoc *moc;
-		Live2D::Cubism::Framework::CubismModel *model;
-		Live2D::Cubism::Framework::CubismMotionManager *motion;
-		Live2D::Cubism::Framework::CubismMotionManager* expression;
-		Live2D::Cubism::Framework::CubismEyeBlink *eyeBlink;
-		Live2D::Cubism::Framework::CubismPhysics *physics;
-		Live2D::Cubism::Framework::CubismBreath *breath;
+		CubismMoc *moc;
+		CubismModel *model;
+		CubismMotionManager *motion;
+		CubismMotionManager* expression;
+		CubismEyeBlink *eyeBlink;
+		CubismPhysics *physics;
+		CubismBreath *breath;
+		CubismPose *pose;
 		// Mesh data list
 		std::vector<Live2LOVEMesh*> meshData;
 		// Mesh data map (use sparingly)
 		std::map<std::string, Live2LOVEMesh*> meshDataMap;
 		// List of motions (movement)
-		std::map<std::string, Live2D::Cubism::Framework::ACubismMotion*> motionList;
+		std::map<std::string, CubismMotion*> motionList;
 		// List of expressions
-		std::map<std::string, Live2D::Cubism::Framework::ACubismMotion*> expressionList;
+		std::map<std::string, CubismExpressionMotion*> expressionList;
 		// Lua state
 		lua_State *L;
-		// Elapsed time. Modulated by 31536000.0 (1 year)
-		double elapsedTime;
 		// Enable movement animation
 		bool movementAnimation;
 		// Enable eye blink
@@ -116,6 +134,12 @@ namespace live2love
 		std::string motionLoop;
 		// Parameter update list
 		std::map<std::string, std::pair<double, double>*> postParamUpdateList;
+		// Model width and height
+		float modelWidth, modelHeight;
+		// Model offset
+		float modelOffX, modelOffY;
+		// Model pixel units
+		float modelPixelUnits;
 
 		// Create new Live2LOVE object. Only load moc file
 		Live2LOVE(lua_State *L, const void *buf, size_t size);
@@ -146,7 +170,7 @@ namespace live2love
 		// Get parameter value. This value is updated after the model is updated.
 		double getParamValue(const std::string& name) const;
 		// Get parameter information list
-		std::vector<Live2LOVEParamDef*> *getParamInfoList();
+		std::vector<Live2LOVEParamDef> getParamInfoList();
 		// Get animation movement status
 		bool isAnimationMovementEnabled() const;
 		// Get eye blink status
@@ -169,6 +193,16 @@ namespace live2love
 		void loadPhysics(const void *buf, size_t size);
 		// Load expression
 		void loadExpression(const std::string& name, const void *buf, size_t size);
+		// Load pose from JSON
+		void loadPose(const void *buf, size_t size);
+		// Load eye blink based on specific parameter names
+		void loadEyeBlink(const std::vector<std::string> &names);
+		// Load default eye blink
+		void loadEyeBlink();
+		// Load breath based on specific parameter names
+		void loadBreath(const std::vector<Live2LOVEBreath> &params);
+		// Load default breath
+		void loadBreath();
 
 	private:
 		// Mesh data initialization
