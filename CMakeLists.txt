@@ -9,7 +9,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 ###############
 
 # Prevent in-tree build.
-if(${CMAKE_SOURCE_DIR} STREQUAL ${CMAKE_BINARY_DIR})
+if(${CMAKE_CURRENT_SOURCE_DIR} STREQUAL ${CMAKE_CURRENT_BINARY_DIR})
 	message(FATAL_ERROR "Prevented in-tree build!")
 endif()
 
@@ -141,7 +141,7 @@ else()
 	find_package(Lua 5.1 EXACT REQUIRED)
 	target_include_directories(Live2LOVE PRIVATE ${LUA_INCLUDE_DIR})
 	
-	if(UNIX AND NOT IOS AND NOT RPI AND NOT ANDROID)
+	if(UNIX AND NOT RPI AND NOT ANDROID AND NOT APPLE)
 		# Unfortunately libLive2DCubismCore.a (provided by ${CSM_CORE_LIBS}) is not compiled with fPIC
 		# so we can't link with it.
 		target_link_libraries(Live2LOVE ${LUA_LIBRARIES} ${CMAKE_CURRENT_SOURCE_DIR}/live2d/Core/dll/linux/x86_64/libLive2DCubismCore.so)

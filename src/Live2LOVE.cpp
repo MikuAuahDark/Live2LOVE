@@ -635,7 +635,8 @@ void Live2LOVE::setExpression(const std::string& name)
 	else if (expressionList.find(name) == expressionList.end())
 		throw namedException("Expression not found");
 
-	expression->StartMotion(expressionList[name], false, 1.0f);
+	CubismExpressionMotion *expr = expressionList[name];
+	expression->StartMotion(expressionList[name], false, expr->GetFadeInTime());
 }
 
 void Live2LOVE::loadMotion(const std::string& name, const std::pair<double, double>& fade, const void *buf, size_t size)
@@ -771,6 +772,8 @@ void Live2LOVE::loadBreath()
 		breathDefault.PushBack(CubismBreath::BreathParameterData(toCsmString(DefaultParameterId::ParamBodyAngleX), 0.0f, 4.0f, 15.5345f, 0.5f));
 		idInitialized = true;
 	}
+
+	breath->SetParameters(breathDefault);
 }
 
 std::pair<float, float> Live2LOVE::getModelCenterPosition()
