@@ -630,6 +630,16 @@ int Live2LOVE_loadPose(lua_State *L)
 	return 0;
 }
 
+int Live2LOVE_getModelCenterPosition(lua_State *L)
+{
+	// Get udata
+	Live2LOVE *l2l = *(Live2LOVE**)luaL_checkudata(L, 1, "Live2LOVE");
+	std::pair<float, float> centerpos = l2l->getModelCenterPosition();
+	lua_pushnumber(L, centerpos.first);
+	lua_pushnumber(L, centerpos.second);
+	return 2;
+}
+
 int Live2LOVE___gc(lua_State *L)
 {
 	Live2LOVE **x = (Live2LOVE**)luaL_checkudata(L, 1, "Live2LOVE");
@@ -664,6 +674,7 @@ static luaL_Reg Live2LOVE_methods[] = {
 	{"getParamInfoList", Live2LOVE_getParamInfoList},
 	{"getMesh", Live2LOVE_getMesh},
 	{"getMeshCount", Live2LOVE_getMeshCount},
+	{"getModelCenterPosition", Live2LOVE_getModelCenterPosition},
 	{"getExpressionList", Live2LOVE_getExpressionList},
 	{"getMotionList", Live2LOVE_getMotionList},
 	{"getWidth", Live2LOVE_getWidth},

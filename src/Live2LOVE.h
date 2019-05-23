@@ -203,6 +203,8 @@ namespace live2love
 		void loadBreath(const std::vector<Live2LOVEBreath> &params);
 		// Load default breath
 		void loadBreath();
+		// Get model offset
+		std::pair<float, float> getModelCenterPosition();
 
 	private:
 		// Mesh data initialization

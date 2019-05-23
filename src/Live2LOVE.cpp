@@ -44,7 +44,6 @@ extern "C" {
 #include "RefData.h"
 
 // Live2D
-#include "Effect/CubismBreath.hpp"
 #include "Id/CubismIdManager.hpp"
 #include "CubismDefaultParameterId.hpp"
 
@@ -254,8 +253,8 @@ void Live2LOVE::setupMeshData()
 			// r, g, b will be 1
 			// Textures in OpenGL are flipped but aren't in LOVE so the Y position is flipped
 			// to take that into account.
-			m.x = points[j].X * modelPixelUnits;
-			m.y = points[j].Y * -modelPixelUnits;
+			m.x = points[j].X * modelPixelUnits + modelOffX;
+			m.y = points[j].Y * -modelPixelUnits + modelOffY;
 			m.u = uvmap[j].X;
 			m.v = 1.0f - uvmap[j].Y;
 			m.r = m.g = m.b = m.a = 255; // set later
@@ -363,8 +362,8 @@ void Live2LOVE::update(double dt)
 		for (int i = 0; i < mesh->numPoints; i++)
 		{
 			Live2LOVEMeshFormat& m = mesh->tablePointer[i];
-			m.x = points[i].X * modelPixelUnits;
-			m.y = points[i].Y * -modelPixelUnits;
+			m.x = points[i].X * modelPixelUnits + modelOffX;
+			m.y = points[i].Y * -modelPixelUnits + modelOffY;
 			m.a = (unsigned char) floor(opacity * 255.0f + 0.5f);
 		}
 
@@ -772,6 +771,11 @@ void Live2LOVE::loadBreath()
 		breathDefault.PushBack(CubismBreath::BreathParameterData(toCsmString(DefaultParameterId::ParamBodyAngleX), 0.0f, 4.0f, 15.5345f, 0.5f));
 		idInitialized = true;
 	}
+}
+
+std::pair<float, float> Live2LOVE::getModelCenterPosition()
+{
+	return std::pair<float, float>(modelOffX, modelOffY);
 }
 
 int Live2LOVE::drawStencil(lua_State *L)
