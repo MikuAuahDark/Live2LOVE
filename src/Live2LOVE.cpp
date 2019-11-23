@@ -74,17 +74,6 @@ static int stencilFragRef = LUA_REFNIL;
 // Sort operator, for std::sort
 static bool compareDrawOrder(const Live2LOVEMesh *a, const Live2LOVEMesh *b)
 {
-	/*
-	int da = a->model->GetDrawableRenderOrders(
-	int db = b->drawData->getDrawOrder(*b->modelContext, b->drawContext);\
-	if (da == db)
-		if (a->partsIndex == b->partsIndex)
-			return a->drawDataIndex < b->drawDataIndex;
-		else
-			return a->partsIndex < b->partsIndex;
-	else
-		return da < db;
-	*/
 	return a->renderOrder < b->renderOrder;
 }
 
@@ -108,22 +97,19 @@ template<class T> T* createData(lua_State *L, size_t amount = 1)
 }
 
 Live2LOVE::Live2LOVE(lua_State *L, const void *buf, size_t size)
-: L(L)
-, moc(nullptr)
+: moc(nullptr)
 , model(nullptr)
 , motion(nullptr)
-, breath(nullptr)
 , expression(nullptr)
 , eyeBlink(nullptr)
 , physics(nullptr)
+, breath(nullptr)
 , pose(nullptr)
-, motionLoop("")
+, L(L)
 , movementAnimation(true)
 , eyeBlinkMovement(true)
+, motionLoop("")
 {
-	constexpr uintptr_t MOC_ALIGN = csmAlignofMoc - 1;
-	constexpr uintptr_t MODEL_ALIGN = csmAlignofModel - 1;
-
 	// initialize clip fragment shader
 	if (stencilFragRef == LUA_REFNIL)
 	{

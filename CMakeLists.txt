@@ -137,6 +137,7 @@ if(MSVC)
 		debug ${CMAKE_CURRENT_SOURCE_DIR}/live2d/Core/lib/windows/${_LIVE2LOVE_WINARCH}/${_LIVE2LOVE_MSVC_LINK}/Live2DCubismCore_${_LIVE2LOVE_CRT_TYPE}d.lib
 		optimized ${CMAKE_CURRENT_SOURCE_DIR}/live2d/Core/lib/windows/${_LIVE2LOVE_WINARCH}/${_LIVE2LOVE_MSVC_LINK}/Live2DCubismCore_${_LIVE2LOVE_CRT_TYPE}.lib
 	)
+	message(STATUS "Selected Live2D Core MSVC ver: ${_LIVE2LOVE_MSVC_LINK} (${_LIVE2LOVE_WINARCH})")
 else()
 	find_package(Lua 5.1 EXACT REQUIRED)
 	target_include_directories(Live2LOVE PRIVATE ${LUA_INCLUDE_DIR})

@@ -46,7 +46,7 @@ class Live2LOVEAllocator: public Live2D::Cubism::Framework::ICubismAllocator
 
 	void Deallocate(void *ptr)
 	{
-		delete[] ptr;
+		delete[] ((uint8_t *) ptr);
 	}
 
 	void *AllocateAligned(const Live2D::Cubism::Framework::csmSizeType size, const Live2D::Cubism::Framework::csmUint32 align)
