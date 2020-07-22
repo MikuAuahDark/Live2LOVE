@@ -65,7 +65,7 @@ namespace live2love
 static const char stencilFragment[] = R"(
 vec4 effect(vec4 color, Image tex, vec2 tc, vec2 sc)
 {
-	if (Texel(tex, tc).a > 0.003) return vec4(1.0, 1.0, 1.0, 1.0);
+	if (Texel(tex, tc).a > 0.1) return vec4(1.0, 1.0, 1.0, 1.0);
 	else discard;
 }
 )";

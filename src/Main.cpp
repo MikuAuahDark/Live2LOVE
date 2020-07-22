@@ -916,7 +916,7 @@ int Live2LOVE_Live2LOVE_full(lua_State *L)
 						lua_pop(L, 1);
 					}
 				}
-				else
+				else if (motionObject.size() > 0)
 				{
 					auto &motionInfo = motionObject[0].get<picojson::object>();
 
