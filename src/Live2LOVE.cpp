@@ -58,6 +58,26 @@ inline const Live2D::Cubism::Framework::CubismId *toCsmString(const std::string 
 	return Live2D::Cubism::Framework::CubismFramework::GetIdManager()->GetId(nstr);
 }
 
+// Push "string"-wrapped pointer into the stack
+static void encodePointer(lua_State *L, void *ptr)
+{
+	char temp[sizeof(void*)];
+	memcpy(temp, &ptr, sizeof(void*));
+	lua_pushlstring(L, temp, sizeof(void*));
+}
+
+// Pop "string"-wrapped pointer from the stack i
+template<typename P = void*> static P decodePointer(lua_State *L, int i)
+{
+	size_t size;
+	const char *ch = luaL_optlstring(L, i, "", &size);
+
+	if (ch == nullptr || size == 0)
+		return nullptr;
+
+	return *((P *) ch);
+}
+
 namespace live2love
 {
 
@@ -78,19 +98,43 @@ static bool compareDrawOrder(const Live2LOVEMesh *a, const Live2LOVEMesh *b)
 }
 
 // Push the ByteData into stack.
-template<class T> T* createData(lua_State *L, size_t amount = 1)
+template<class T> T* createData(lua_State *L, size_t amount)
 {
 	lua_checkstack(L, lua_gettop(L) + 8);
+
 	size_t memalloc = sizeof(T) * amount;
+	T *val = nullptr;
+
 	// New file data
 	RefData::getRef(L, "love.data.newByteData");
 	lua_pushinteger(L, memalloc);
 	lua_call(L, 1, 1);
-	lua_getfield(L, -1, "getPointer");
-	lua_pushvalue(L, -2);
-	lua_call(L, 1, 1);
-	T* val = (T*)lua_topointer(L, -1);
-	lua_pop(L, 1); // pop the pointer
+
+	// Try Data:getFFIPointer first, it's safe from lightuserdata restrictions
+	lua_getfield(L, -1, "getFFIPointer");
+	if (lua_isnil(L, -1) == false)
+	{
+		lua_pushvalue(L, -2);
+		lua_call(L, 1, 1);
+
+		if (lua_isnil(L, -1) == false)
+			val = *((T **) lua_topointer(L, -1));
+
+		lua_pop(L, 1); // pop the FFI pointer/nil value
+	}
+	else
+		lua_pop(L, 1); // pop nil value
+
+	// If Data:getFFIPointer fails, use Data:getPointer
+	// probably because FFI is disabled/unavailable or using version < 11.3
+	if (val == nullptr)
+	{
+		lua_getfield(L, -1, "getPointer");
+		lua_pushvalue(L, -2);
+		lua_call(L, 1, 1);
+		val = (T*)lua_topointer(L, -1);
+		lua_pop(L, 1); // pop the pointer
+	}
 
 	// Leave the ByteData in stack
 	return val;
@@ -137,8 +181,8 @@ Live2LOVE::Live2LOVE(lua_State *L, const void *buf, size_t size)
 		throw namedException("Failed to intialize model");
 	
 	// Get model dimensions
-    csmVector2 tmpSizeInPixels;
-    csmVector2 tmpOriginInPixels;
+	csmVector2 tmpSizeInPixels;
+	csmVector2 tmpOriginInPixels;
 	csmReadCanvasInfo(model->GetModel(), &tmpSizeInPixels, &tmpOriginInPixels, &modelPixelUnits);
 	modelWidth = tmpSizeInPixels.X;
 	modelHeight = tmpSizeInPixels.Y;
@@ -399,7 +443,7 @@ void Live2LOVE::draw(double x, double y, double r, double sx, double sy, double 
 			lua_pushnumber(L, 0);
 			lua_call(L, 2, 0); // love.graphics.setStencilTest
 			// Push upvalues
-			lua_pushlightuserdata(L, mesh);
+			encodePointer(L, mesh);
 			lua_pushnumber(L, x);
 			lua_pushnumber(L, y);
 			lua_pushnumber(L, r);
@@ -783,7 +827,8 @@ int Live2LOVE::drawStencil(lua_State *L)
 	// Upvalues:
 	// 1. Mesh pointer
 	// 2-10: draw args
-	Live2LOVEMesh *mesh = (Live2LOVEMesh*)lua_topointer(L, lua_upvalueindex(1));
+	Live2LOVEMesh *mesh = decodePointer<Live2LOVEMesh *>(L, lua_upvalueindex(1));
+
 	for (auto x: mesh->clipID)
 	{
 		lua_pushvalue(L, -1); // love.graphics.draw
