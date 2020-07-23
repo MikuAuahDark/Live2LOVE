@@ -90,6 +90,7 @@ vec4 effect(vec4 color, Image tex, vec2 tc, vec2 sc)
 }
 )";
 static int stencilFragRef = LUA_REFNIL;
+static int stencilCount = 0;
 
 // Sort operator, for std::sort
 static bool compareDrawOrder(const Live2LOVEMesh *a, const Live2LOVEMesh *b)
@@ -438,10 +439,6 @@ void Live2LOVE::draw(double x, double y, double r, double sx, double sy, double 
 		{
 			// Get stencil function
 			RefData::getRef(L, "love.graphics.stencil");
-			RefData::getRef(L, "love.graphics.setStencilTest");
-			lua_pushstring(L, "greater");
-			lua_pushnumber(L, 0);
-			lua_call(L, 2, 0); // love.graphics.setStencilTest
 			// Push upvalues
 			encodePointer(L, mesh);
 			lua_pushnumber(L, x);
@@ -453,9 +450,15 @@ void Live2LOVE::draw(double x, double y, double r, double sx, double sy, double 
 			lua_pushnumber(L, oy);
 			lua_pushnumber(L, kx);
 			lua_pushnumber(L, ky);
-			lua_pushcclosure(L, Live2LOVE::drawStencil, 10);
+			lua_pushcclosure(L, Live2LOVE::drawStencil, 10); // push stencil draw function
 			lua_pushstring(L, "increment");
+			stencilCount = 0;
 			lua_call(L, 2, 0); // love.graphics.stencil
+
+			RefData::getRef(L, "love.graphics.setStencilTest");
+			lua_pushstring(L, "gequal");
+			lua_pushnumber(L, stencilCount);
+			lua_call(L, 2, 0); // love.graphics.setStencilTest
 			stencilSet = true;
 		}
 
@@ -813,14 +816,18 @@ std::pair<float, float> Live2LOVE::getModelCenterPosition()
 
 int Live2LOVE::drawStencil(lua_State *L)
 {
-	lua_checkstack(L, lua_gettop(L) + 16);
+	int t = lua_gettop(L);
+	lua_checkstack(L, t + 16);
 
-	// Set the shader
+	// Get current shader
 	RefData::getRef(L, "love.graphics.getShader");
-	lua_call(L, 0, 1);
+	lua_call(L, 0, 1); // shader = stack 1
+
+	// Set shader
 	RefData::getRef(L, "love.graphics.setShader");
 	RefData::getRef(L, stencilFragRef);
-	lua_call(L, 1, 0);
+	lua_call(L, 1, 0); // love.graphics.setShader(stencilFragRef)
+
 	// get love.graphics.draw
 	RefData::getRef(L, "love.graphics.draw");
 
@@ -829,22 +836,32 @@ int Live2LOVE::drawStencil(lua_State *L)
 	// 2-10: draw args
 	Live2LOVEMesh *mesh = decodePointer<Live2LOVEMesh *>(L, lua_upvalueindex(1));
 
-	for (auto x: mesh->clipID)
-	{
-		lua_pushvalue(L, -1); // love.graphics.draw
-		RefData::getRef(L, x->meshRefID); // Mesh
-		for (int i = 2; i <= 10; i++)
-			lua_pushvalue(L, lua_upvalueindex(i)); // the rest
-		lua_call(L, 10, 0);
-	}
+	drawStencil2(L, mesh);
 
-	// reset shader
+	// Reset shader
 	RefData::getRef(L, "love.graphics.setShader");
 	lua_pushvalue(L, -3);
 	lua_call(L, 1, 0);
 	lua_pop(L, 2); // love.graphics.draw and used shader
 
 	return 0;
+}
+
+void Live2LOVE::drawStencil2(lua_State *L, Live2LOVEMesh *mesh)
+{
+	for (auto x: mesh->clipID)
+	{
+		if (x->clipID.size() > 0)
+			drawStencil2(L, x);
+
+		lua_pushvalue(L, -1); // love.graphics.draw
+		RefData::getRef(L, x->meshRefID); // Mesh
+		for (int i = 2; i <= 10; i++)
+			lua_pushvalue(L, lua_upvalueindex(i)); // the rest/upvalues
+
+		lua_call(L, 10, 0);
+		stencilCount++;
+	}
 }
 
 } /* live2love */

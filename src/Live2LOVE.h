@@ -215,6 +215,8 @@ namespace live2love
 		void initializeMotion();
 		// Stencil drawing
 		static int drawStencil(lua_State *L);
+		// Stencil drawing
+		static void drawStencil2(lua_State *L, Live2LOVEMesh *mesh);
 	};
 }
 
