@@ -122,6 +122,7 @@ namespace live2love
 		CubismPhysics *physics;
 		CubismBreath *breath;
 		CubismPose *pose;
+
 		// Mesh data list
 		std::vector<Live2LOVEMesh*> meshData;
 		// Mesh data map (use sparingly)
@@ -146,6 +147,11 @@ namespace live2love
 		float modelOffX, modelOffY;
 		// Model pixel units
 		float modelPixelUnits;
+
+		// glBlendFuncSeparate
+		using glBlendFuncSeparate_t = void(*)(unsigned int, unsigned int, unsigned int, unsigned int);
+		static glBlendFuncSeparate_t glBlendFuncSeparate;
+		static bool glBlendFuncSeparateAttempted;
 
 		// Create new Live2LOVE object. Only load moc file
 		Live2LOVE(lua_State *L, const void *buf, size_t size);

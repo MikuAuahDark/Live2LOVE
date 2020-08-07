@@ -30,6 +30,14 @@
 #include <string>
 #include <vector>
 
+// Shared object
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <Windows.h>
+#else
+#include <dlfcn.h>
+#endif
+
 // Lua
 extern "C" {
 #include "lua.h"
@@ -90,6 +98,63 @@ vec4 effect(vec4 color, Image tex, vec2 tc, vec2 sc)
 }
 )";
 static int stencilFragRef = LUA_REFNIL;
+
+Live2LOVE::glBlendFuncSeparate_t Live2LOVE::glBlendFuncSeparate = nullptr;
+bool Live2LOVE::glBlendFuncSeparateAttempted = false;
+
+static Live2LOVE::glBlendFuncSeparate_t loadBlendFunc(lua_State *L = nullptr)
+{
+	using glBlendFuncSeparate_t = Live2LOVE::glBlendFuncSeparate_t;
+
+	glBlendFuncSeparate_t f;
+
+	if (L)
+	{
+		// Let's try to use FFI first, doesn't matter if it's slow.
+		if (luaL_loadstring(L, R"Live2LOVE(
+local ffi = require("ffi")
+local namespace = ffi.os == "Windows" and ffi.load("SDL2") or ffi.C
+
+ffi.cdef[[
+void* _LIVE2LOVE_GL_GET_PROC_ADDRESS(const char* proc) asm("SDL_GL_GetProcAddress");
+]]
+
+return namespace._LIVE2LOVE_GL_GET_PROC_ADDRESS("glBlendFuncSeparate")
+		)Live2LOVE") == 0)
+		{
+			if (lua_pcall(L, 0, 1, 0) == 0)
+			{
+				f = * ((glBlendFuncSeparate_t *) lua_topointer(L, -1));
+				lua_pop(L, 1);
+
+				return f;
+			}
+		}
+	}
+
+	// Ok FFI doesn't work, fallback to OS-specific API
+	using GetProcAddress_t = void*(*)(const char*);
+
+#ifdef _WIN32
+	HMODULE sdl2 = LoadLibraryA("SDL2");
+
+	if (sdl2 == nullptr)
+		return nullptr;
+
+	GetProcAddress_t getProc = (GetProcAddress_t) GetProcAddress(sdl2, "SDL_GL_GetProcAddress");
+#else
+	GetProcAddress_t getProc = (GetProcAddress_t) dlsym(RTLD_DEFAULT, "SDL_GL_GetProcAddress");
+#endif
+
+	if (getProc)
+		f = (glBlendFuncSeparate_t) getProc("glBlendFuncSeparate");
+
+#ifdef _WIN32
+	FreeLibrary(sdl2);
+#endif
+
+	return f;
+}
 
 // Sort operator, for std::sort
 static bool compareDrawOrder(const Live2LOVEMesh *a, const Live2LOVEMesh *b)
@@ -182,6 +247,13 @@ Live2LOVE::Live2LOVE(lua_State *L, const void *buf, size_t size)
 		}
 		stencilFragRef = RefData::setRef(L, -1);
 		lua_pop(L, 1);
+	}
+
+	// Initialize glBlendFuncSeparate
+	if (glBlendFuncSeparateAttempted == false)
+	{
+		glBlendFuncSeparate = loadBlendFunc(L);
+		glBlendFuncSeparateAttempted = true;
 	}
 
 	// Init moc
@@ -393,11 +465,15 @@ void Live2LOVE::update(double dt)
 
 		// Get mesh ref
 		RefData::getRef(L, mesh->meshRefID);
+
 		// Get "setVertices"
 		lua_getfield(L, -1, "setVertices");
 		lua_pushvalue(L, -2);
+
 		// Get data mesh ref
 		RefData::getRef(L, mesh->tableRefID);
+
+		// Get opacity and new points
 		float visibility = model->GetDrawableDynamicFlagIsVisible(mesh->index) ? 1.0f : 0.0f;
 		float opacity = visibility * model->GetDrawableOpacity(mesh->index);
 		const csmVector2 *points = model->GetDrawableVertexPositions(mesh->index);
@@ -413,6 +489,9 @@ void Live2LOVE::update(double dt)
 
 		// Call setVertices
 		lua_call(L, 2, 0);
+
+		// Pop Mesh object
+		lua_pop(L, 1);
 	}
 	// Update draw order
 	std::sort(meshData.begin(), meshData.end(), compareDrawOrder);
@@ -493,6 +572,11 @@ void Live2LOVE::draw(double x, double y, double r, double sx, double sy, double 
 
 		if (meshBlendMode != blendMode)
 		{
+			constexpr unsigned int ZERO = 0;
+			constexpr unsigned int ONE = 1;
+			constexpr unsigned int DST_COLOR = 0x0306;
+			constexpr unsigned int ONE_MINUS_SRC_ALPHA = 0x0303;
+
 			// Push love.graphics.setBlendMode
 			lua_pushvalue(L, -4);
 
@@ -521,8 +605,13 @@ void Live2LOVE::draw(double x, double y, double r, double sx, double sy, double 
 					break;
 				}
 			}
+
 			// Call it
 			lua_call(L, 2, 0);
+
+			// Override multiply blend mode
+			if (meshBlendMode == MultiplyBlending && glBlendFuncSeparate)
+				glBlendFuncSeparate(DST_COLOR, ONE_MINUS_SRC_ALPHA, ZERO, ONE);
 		}
 		lua_pushvalue(L, -1);
 		RefData::getRef(L, mesh->meshRefID);
