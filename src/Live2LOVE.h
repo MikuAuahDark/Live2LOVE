@@ -106,6 +106,12 @@ namespace live2love
 	// Live2LOVE model object
 	struct Live2LOVE
 	{
+		// Draw coordinates for love.graphics.draw
+		struct DrawCoordinates 
+		{
+			double x, y, r, sx, sy, ox, oy, kx, ky;
+		};
+
 		// This is pretty much self-explanatory
 		//uint8_t *mocFreeThis;
 		CubismMoc *moc;
@@ -213,10 +219,10 @@ namespace live2love
 		void initializeExpression();
 		// Motion initializaiton
 		void initializeMotion();
-		// Stencil drawing
+		// Stencil drawing main loop
+		void drawStencil(Live2LOVEMesh *mesh, DrawCoordinates &drawPosition, int depth);
+		// Stencil drawing Lua function
 		static int drawStencil(lua_State *L);
-		// Stencil drawing
-		static void drawStencil2(lua_State *L, Live2LOVEMesh *mesh);
 	};
 }
 

@@ -1108,12 +1108,14 @@ extern "C" int EXPORT_SIGNATURE luaopen_Live2LOVE(lua_State *L)
 	// Check if love.graphics module is loaded.
 	if (lua_isnil(L, -1))
 		luaL_error(L, "love.graphics module is not loaded!");
-
-	// Get love.graphics.draw
+	
+	// Get needed function
+	lua_getfield(L, -1, "clear");
+	RefData::setRef(L, "love.graphics.clear", -1);
+	lua_pop(L, 1); // pop the function
 	lua_getfield(L, -1, "draw");
 	RefData::setRef(L, "love.graphics.draw", -1);
-	lua_pop(L, 1); // pop the function
-	// Get needed function
+	lua_pop(L, 1);
 	lua_getfield(L, -1, "newMesh");
 	RefData::setRef(L, "love.graphics.newMesh", -1);
 	lua_pop(L, 1);

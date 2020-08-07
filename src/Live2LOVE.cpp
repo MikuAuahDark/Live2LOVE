@@ -90,7 +90,6 @@ vec4 effect(vec4 color, Image tex, vec2 tc, vec2 sc)
 }
 )";
 static int stencilFragRef = LUA_REFNIL;
-static int stencilCount = 0;
 
 // Sort operator, for std::sort
 static bool compareDrawOrder(const Live2LOVEMesh *a, const Live2LOVEMesh *b)
@@ -139,6 +138,20 @@ template<class T> T* createData(lua_State *L, size_t amount)
 
 	// Leave the ByteData in stack
 	return val;
+}
+
+// +9 at Lua stack
+inline void pushDrawCoordinates(lua_State *L, const Live2LOVE::DrawCoordinates &di)
+{
+	lua_pushnumber(L, di.x);
+	lua_pushnumber(L, di.y);
+	lua_pushnumber(L, di.r);
+	lua_pushnumber(L, di.sx);
+	lua_pushnumber(L, di.sy);
+	lua_pushnumber(L, di.ox);
+	lua_pushnumber(L, di.oy);
+	lua_pushnumber(L, di.kx);
+	lua_pushnumber(L, di.ky);
 }
 
 Live2LOVE::Live2LOVE(lua_State *L, const void *buf, size_t size)
@@ -420,16 +433,25 @@ void Live2LOVE::draw(double x, double y, double r, double sx, double sy, double 
 	RefData::getRef(L, "love.graphics.setBlendMode");
 	RefData::getRef(L, "love.graphics.getBlendMode");
 	lua_call(L, 0, 2);
+
 	// Set blending mode to alpha,alphamultiply
 	lua_pushvalue(L, -3);
 	lua_pushstring(L, "alpha");
 	lua_pushstring(L, "alphamultiply");
 	lua_call(L, 2, 0);
 
+	// Clear stencil buffer
+	RefData::getRef(L, "love.graphics.clear");
+	lua_pushboolean(L, 0);
+	lua_pushinteger(L, 255);
+	lua_call(L, 2, 0);
+
 	// Blending mode
 	auto blendMode = NormalBlending; // alpha,alphamultiply
+
 	// Get love.graphics.draw
 	RefData::getRef(L, "love.graphics.draw");
+
 	// List mesh data
 	for (auto mesh: meshData)
 	{
@@ -437,56 +459,63 @@ void Live2LOVE::draw(double x, double y, double r, double sx, double sy, double 
 		// If there's clip ID, draw stencil first.
 		if (mesh->clipID.size() > 0)
 		{
-			// Get stencil function
-			RefData::getRef(L, "love.graphics.stencil");
-			// Push upvalues
-			encodePointer(L, mesh);
-			lua_pushnumber(L, x);
-			lua_pushnumber(L, y);
-			lua_pushnumber(L, r);
-			lua_pushnumber(L, sx);
-			lua_pushnumber(L, sy);
-			lua_pushnumber(L, ox);
-			lua_pushnumber(L, oy);
-			lua_pushnumber(L, kx);
-			lua_pushnumber(L, ky);
-			lua_pushcclosure(L, Live2LOVE::drawStencil, 10); // push stencil draw function
-			lua_pushstring(L, "increment");
-			stencilCount = 0;
-			lua_call(L, 2, 0); // love.graphics.stencil
+			// Setup DrawCoordinates
+			DrawCoordinates drawInfo {x, y, r, sx, sy, ox, oy, kx, ky};
 
-			RefData::getRef(L, "love.graphics.setStencilTest");
-			lua_pushstring(L, "gequal");
-			lua_pushnumber(L, stencilCount);
-			lua_call(L, 2, 0); // love.graphics.setStencilTest
+			// Backup shader
+			RefData::getRef(L, "love.graphics.getShader");
+			lua_call(L, 0, 1);
+
+			RefData::getRef(L, "love.graphics.setShader");
+			RefData::getRef(L, stencilFragRef);
+			lua_call(L, 1, 0);
+
+			// Draw stencil main loop
 			stencilSet = true;
+			drawStencil(mesh, drawInfo, 1);
+
+			// Call love.graphics.setStencilTest("equal", 1);
+			RefData::getRef(L, "love.graphics.setStencilTest");
+			lua_pushlstring(L, "equal", 5);
+			lua_pushinteger(L, 1);
+			lua_call(L, 2, 0);
+
+			// Restore shader
+			RefData::getRef(L, "love.graphics.setShader");
+			lua_pushvalue(L, -2);
+			lua_call(L, 1, 0);
+
+			// Remove shader
+			lua_pop(L, 1);
 		}
 
 		auto meshBlendMode = mesh->blending;
+
 		if (meshBlendMode != blendMode)
 		{
 			// Push love.graphics.setBlendMode
 			lua_pushvalue(L, -4);
+
 			switch (blendMode = meshBlendMode)
 			{
 				default:
 				case NormalBlending:
 				{
-					// Normal blending (alpha,alphamultiply)
+					// Normal blending (alpha, alphamultiply)
 					lua_pushstring(L, "alpha");
 					lua_pushstring(L, "alphamultiply");
 					break;
 				}
 				case AddBlending:
 				{
-					// Add blending (add,alphamultiply)
+					// Add blending (add, alphamultiply)
 					lua_pushstring(L, "add");
 					lua_pushstring(L, "alphamultiply");
 					break;
 				}
 				case MultiplyBlending:
 				{
-					// Multiply bnending (multiply,premultiplied)
+					// Multiply blending (multiply, premultiplied)
 					lua_pushstring(L, "multiply");
 					lua_pushstring(L, "premultiplied");
 					break;
@@ -512,8 +541,15 @@ void Live2LOVE::draw(double x, double y, double r, double sx, double sy, double 
 		// If there's stencil, disable it.
 		if (stencilSet)
 		{
+			// Disable stencil test
 			RefData::getRef(L, "love.graphics.setStencilTest");
 			lua_call(L, 0, 0);
+
+			// Clear stencil buffer
+			RefData::getRef(L, "love.graphics.clear");
+			lua_pushboolean(L, 0);
+			lua_pushinteger(L, 255);
+			lua_call(L, 2, 0);
 		}
 	}
 
@@ -816,51 +852,55 @@ std::pair<float, float> Live2LOVE::getModelCenterPosition()
 
 int Live2LOVE::drawStencil(lua_State *L)
 {
-	int t = lua_gettop(L);
-	lua_checkstack(L, t + 16);
+	lua_checkstack(L, 11);
 
-	// Get current shader
-	RefData::getRef(L, "love.graphics.getShader");
-	lua_call(L, 0, 1); // shader = stack 1
-
-	// Set shader
-	RefData::getRef(L, "love.graphics.setShader");
-	RefData::getRef(L, stencilFragRef);
-	lua_call(L, 1, 0); // love.graphics.setShader(stencilFragRef)
-
-	// get love.graphics.draw
+	// Call love.graphics.draw(all upvalues unpacked)
 	RefData::getRef(L, "love.graphics.draw");
 
-	// Upvalues:
-	// 1. Mesh pointer
-	// 2-10: draw args
-	Live2LOVEMesh *mesh = decodePointer<Live2LOVEMesh *>(L, lua_upvalueindex(1));
+	for (int i = 1; i <= 10; i++)
+		lua_pushvalue(L, lua_upvalueindex(i));
 
-	drawStencil2(L, mesh);
-
-	// Reset shader
-	RefData::getRef(L, "love.graphics.setShader");
-	lua_pushvalue(L, -3);
-	lua_call(L, 1, 0);
-	lua_pop(L, 2); // love.graphics.draw and used shader
+	lua_call(L, 10, 0);
 
 	return 0;
 }
 
-void Live2LOVE::drawStencil2(lua_State *L, Live2LOVEMesh *mesh)
+void Live2LOVE::drawStencil(Live2LOVEMesh *mesh, DrawCoordinates &drawInfo, int depth)
 {
-	for (auto x: mesh->clipID)
+	for (Live2LOVEMesh *x: mesh->clipID)
 	{
-		if (x->clipID.size() > 0)
-			drawStencil2(L, x);
+		bool hasMask = x->clipID.size() > 0;
 
-		lua_pushvalue(L, -1); // love.graphics.draw
-		RefData::getRef(L, x->meshRefID); // Mesh
-		for (int i = 2; i <= 10; i++)
-			lua_pushvalue(L, lua_upvalueindex(i)); // the rest/upvalues
+		if (hasMask)
+			drawStencil(x, drawInfo, depth + 1);
 
-		lua_call(L, 10, 0);
-		stencilCount++;
+		// Call love.graphics.setStencilTest
+		RefData::getRef(L, "love.graphics.setStencilTest");
+
+		if (hasMask)
+		{
+			// love.graphics.setStencilTest("equal", depth + 1);
+			lua_pushlstring(L, "equal", 4);
+			lua_pushinteger(L, depth + 1);
+		}
+		else
+		{
+			// love.graphics.setStencilTest("always", 0)
+			lua_pushlstring(L, "always", 6);
+			lua_pushinteger(L, 0);
+		}
+
+		lua_call(L, 2, 0);
+
+		// Call love.graphics.stencil(drawStencil and 10 upvalues, "replace", depth, true);
+		RefData::getRef(L, "love.graphics.stencil");
+		RefData::getRef(L, x->meshRefID);
+		pushDrawCoordinates(L, drawInfo);
+		lua_pushcclosure(L, drawStencil, 10);
+		lua_pushlstring(L, "replace", 7);
+		lua_pushinteger(L, depth);
+		lua_pushboolean(L, 1);
+		lua_call(L, 4, 0);
 	}
 }
 
