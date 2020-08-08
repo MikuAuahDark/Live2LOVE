@@ -52,7 +52,7 @@ namespace live2love
 {
 	using namespace Live2D::Cubism::Core;
 	using namespace Live2D::Cubism::Framework;
-	typedef std::runtime_error namedException;
+	typedef std::runtime_error NamedException;
 	constexpr double PI = 3.14159265358979323846264338327950288;
 
 	enum MotionModeID {
@@ -106,6 +106,19 @@ namespace live2love
 	// Live2LOVE model object
 	struct Live2LOVE
 	{
+		// glBlendFuncSeparate function signature
+#ifdef _WIN32
+		using glBlendFuncSeparate_t = void(__stdcall *)(unsigned int, unsigned int, unsigned int, unsigned int);
+#else
+		using glBlendFuncSeparate_t = void(*)(unsigned int, unsigned int, unsigned int, unsigned int);
+#endif
+
+		// Blending names
+		static constexpr Rendering::CubismRenderer::CubismBlendMode
+			NormalBlending = Rendering::CubismRenderer::CubismBlendMode_Normal,
+			AddBlending = Rendering::CubismRenderer::CubismBlendMode_Additive,
+			MultiplyBlending = Rendering::CubismRenderer::CubismBlendMode_Multiplicative;
+
 		// Draw coordinates for love.graphics.draw
 		struct DrawCoordinates 
 		{
@@ -125,12 +138,15 @@ namespace live2love
 
 		// Mesh data list
 		std::vector<Live2LOVEMesh*> meshData;
+		// List of textures needing PMA
+		std::vector<bool> needPMATexture;
 		// Mesh data map (use sparingly)
 		std::map<std::string, Live2LOVEMesh*> meshDataMap;
 		// List of motions (movement)
 		std::map<std::string, CubismMotion*> motionList;
 		// List of expressions
 		std::map<std::string, CubismExpressionMotion*> expressionList;
+
 		// Lua state
 		lua_State *L;
 		// Enable movement animation
@@ -149,7 +165,6 @@ namespace live2love
 		float modelPixelUnits;
 
 		// glBlendFuncSeparate
-		using glBlendFuncSeparate_t = void(*)(unsigned int, unsigned int, unsigned int, unsigned int);
 		static glBlendFuncSeparate_t glBlendFuncSeparate;
 		static bool glBlendFuncSeparateAttempted;
 
@@ -227,6 +242,9 @@ namespace live2love
 		void initializeMotion();
 		// Stencil drawing main loop
 		void drawStencil(Live2LOVEMesh *mesh, DrawCoordinates &drawPosition, int depth);
+		// Setup PMA texture
+		int setupPMATexture(int width, int height, int imageIndex);
+
 		// Stencil drawing Lua function
 		static int drawStencil(lua_State *L);
 	};

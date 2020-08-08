@@ -828,6 +828,7 @@ int Live2LOVE_Live2LOVE_full(lua_State *L)
 			// If no extension, provide one
 			if (texPath.substr(texPath.length() - 4, 4) != ".png")
 				texPath += ".png";
+
 			lua_pushlstring(L, texPath.c_str(), texPath.length());
 			lua_pushvalue(L, -4);
 
@@ -1116,6 +1117,9 @@ extern "C" int EXPORT_SIGNATURE luaopen_Live2LOVE(lua_State *L)
 	lua_getfield(L, -1, "draw");
 	RefData::setRef(L, "love.graphics.draw", -1);
 	lua_pop(L, 1);
+	lua_getfield(L, -1, "newCanvas");
+	RefData::setRef(L, "love.graphics.newCanvas", -1);
+	lua_pop(L, 1);
 	lua_getfield(L, -1, "newMesh");
 	RefData::setRef(L, "love.graphics.newMesh", -1);
 	lua_pop(L, 1);
@@ -1128,6 +1132,9 @@ extern "C" int EXPORT_SIGNATURE luaopen_Live2LOVE(lua_State *L)
 	lua_getfield(L, -1, "newImage");
 	RefData::setRef(L, "love.graphics.newImage", -1);
 	lua_pop(L, 1);
+	lua_getfield(L, -1, "reset");
+	RefData::setRef(L, "love.graphics.reset", -1);
+	lua_pop(L, 1);
 	lua_getfield(L, -1, "setStencilTest");
 	RefData::setRef(L, "love.graphics.setStencilTest", -1);
 	lua_pop(L, 1);
@@ -1136,6 +1143,15 @@ extern "C" int EXPORT_SIGNATURE luaopen_Live2LOVE(lua_State *L)
 	lua_pop(L, 1);
 	lua_getfield(L, -1, "newShader");
 	RefData::setRef(L, "love.graphics.newShader", -1);
+	lua_pop(L, 1);
+	lua_getfield(L, -1, "pop");
+	RefData::setRef(L, "love.graphics.pop", -1);
+	lua_pop(L, 1);
+	lua_getfield(L, -1, "push");
+	RefData::setRef(L, "love.graphics.push", -1);
+	lua_pop(L, 1);
+	lua_getfield(L, -1, "setCanvas");
+	RefData::setRef(L, "love.graphics.setCanvas", -1);
 	lua_pop(L, 1);
 	lua_getfield(L, -1, "setShader");
 	RefData::setRef(L, "love.graphics.setShader", -1);

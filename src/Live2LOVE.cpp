@@ -241,7 +241,7 @@ Live2LOVE::Live2LOVE(lua_State *L, const void *buf, size_t size)
 		lua_pcall(L, 1, 1, 0);
 		if (lua_toboolean(L, -2) == 0)
 		{
-			namedException temp(lua_tostring(L, -1));
+			NamedException temp(lua_tostring(L, -1));
 			lua_pop(L, 2);
 			throw temp;
 		}
@@ -259,12 +259,12 @@ Live2LOVE::Live2LOVE(lua_State *L, const void *buf, size_t size)
 	// Init moc
 	moc = CubismMoc::Create((csmByte *) buf, size);
 	if (moc == nullptr)
-		throw namedException("Failed to initialize moc");
+		throw NamedException("Failed to initialize moc");
 
 	// Init model
 	model = moc->CreateModel();
 	if (model == nullptr)
-		throw namedException("Failed to intialize model");
+		throw NamedException("Failed to intialize model");
 	
 	// Get model dimensions
 	csmVector2 tmpSizeInPixels;
@@ -278,8 +278,10 @@ Live2LOVE::Live2LOVE(lua_State *L, const void *buf, size_t size)
 	// Update model
 	model->Update();
 	model->SaveParameters();
+
 	// Setup mesh data
 	setupMeshData();
+
 	// Initialize default eye and breath
 	loadEyeBlink();
 	loadBreath();
@@ -316,11 +318,14 @@ void Live2LOVE::setupMeshData()
 {
 	// Check stack
 	lua_checkstack(L, 64);
+
 	// Get drawable count
 	int drawableCount = model->GetDrawableCount();
 	meshData.reserve(drawableCount);
+
 	// Get render order
 	const csmInt32 *renderOrders = model->GetDrawableRenderOrders();
+
 	// Push newMesh
 	RefData::getRef(L, "love.graphics.newMesh");
 	
@@ -334,6 +339,14 @@ void Live2LOVE::setupMeshData()
 		mesh->textureIndex = model->GetDrawableTextureIndices(i);
 		mesh->blending = model->GetDrawableBlendMode(i);
 		mesh->renderOrder = renderOrders[i];
+
+		// Check PMA texture requirement
+		if (mesh->textureIndex >= needPMATexture.size())
+			needPMATexture.resize(mesh->textureIndex + 1);
+
+		// Check blending
+		if (mesh->blending == MultiplyBlending)
+			needPMATexture[mesh->textureIndex] = true;
 
 		// Create mesh table list
 		int numPoints = mesh->numPoints = model->GetDrawableVertexCount(i);
@@ -479,12 +492,25 @@ void Live2LOVE::update(double dt)
 		const csmVector2 *points = model->GetDrawableVertexPositions(mesh->index);
 
 		// Update
-		for (int i = 0; i < mesh->numPoints; i++)
+		if (mesh->blending == MultiplyBlending)
 		{
-			Live2LOVEMeshFormat& m = mesh->tablePointer[i];
-			m.x = points[i].X * modelPixelUnits + modelOffX;
-			m.y = points[i].Y * -modelPixelUnits + modelOffY;
-			m.a = (unsigned char) floor(opacity * 255.0f + 0.5f);
+			for (int i = 0; i < mesh->numPoints; i++)
+			{
+				Live2LOVEMeshFormat& m = mesh->tablePointer[i];
+				m.x = points[i].X * modelPixelUnits + modelOffX;
+				m.y = points[i].Y * -modelPixelUnits + modelOffY;
+				m.r = m.g = m.b = m.a = (unsigned char) floor(opacity * 255.0f + 0.5f);
+			}
+		}
+		else
+		{
+			for (int i = 0; i < mesh->numPoints; i++)
+			{
+				Live2LOVEMeshFormat& m = mesh->tablePointer[i];
+				m.x = points[i].X * modelPixelUnits + modelOffX;
+				m.y = points[i].Y * -modelPixelUnits + modelOffY;
+				m.a = (unsigned char) floor(opacity * 255.0f + 0.5f);
+			}
 		}
 
 		// Call setVertices
@@ -499,14 +525,8 @@ void Live2LOVE::update(double dt)
 
 void Live2LOVE::draw(double x, double y, double r, double sx, double sy, double ox, double oy, double kx, double ky)
 {
-	// Damn the name is too long
-	constexpr auto
-		NormalBlending = Rendering::CubismRenderer::CubismBlendMode_Normal,
-		AddBlending = Rendering::CubismRenderer::CubismBlendMode_Additive,
-		MultiplyBlending = Rendering::CubismRenderer::CubismBlendMode_Multiplicative;
-
 	if (!lua_checkstack(L, lua_gettop(L) + 24))
-		throw namedException("Internal error: cannot grow Lua stack size");
+		throw NamedException("Internal error: cannot grow Lua stack size");
 
 	// Save blending
 	RefData::getRef(L, "love.graphics.setBlendMode");
@@ -600,17 +620,20 @@ void Live2LOVE::draw(double x, double y, double r, double sx, double sy, double 
 				case MultiplyBlending:
 				{
 					// Multiply blending (multiply, premultiplied)
+					// Needs some specialization, see below
 					lua_pushstring(L, "multiply");
 					lua_pushstring(L, "premultiplied");
 					break;
 				}
 			}
 
-			// Call it
+			// Set blend mode
 			lua_call(L, 2, 0);
 
 			// Override multiply blend mode
 			if (meshBlendMode == MultiplyBlending && glBlendFuncSeparate)
+				// FIXME: LOVE 12.0 have low-level blending mode and non-GL renderer.
+				// Rectify this and use low-level blending mode in the future.
 				glBlendFuncSeparate(DST_COLOR, ONE_MINUS_SRC_ALPHA, ZERO, ONE);
 		}
 		lua_pushvalue(L, -1);
@@ -650,20 +673,63 @@ void Live2LOVE::draw(double x, double y, double r, double sx, double sy, double 
 
 void Live2LOVE::setTexture(int live2dtexno, int loveimageidx)
 {
-	// List mesh
-	for (auto mesh: meshData)
+	live2dtexno--;
+
+	// Bounds checking
+	if (live2dtexno < 0 || live2dtexno >= needPMATexture.size())
+		throw NamedException("Live2D texture number out of range");
+
+	// Get image dimensions
+	int width = 0, height = 0;
+
+	if (!lua_isnil(L, loveimageidx))
 	{
-		if (mesh->textureIndex == live2dtexno - 1)
+		lua_getfield(L, loveimageidx, "getDimensions");
+		lua_pushvalue(L, loveimageidx);
+		lua_call(L, 1, 2);
+
+		width = lua_tointeger(L, -2);
+		height = lua_tointeger(L, -1);
+
+		lua_pop(L, 2);
+	}
+
+	int index = -1;
+
+	if (needPMATexture[live2dtexno] && width != 0 && height != 0)
+		index = setupPMATexture(width, height, loveimageidx);
+
+	// List mesh
+	for (Live2LOVEMesh *mesh: meshData)
+	{
+		if (mesh->textureIndex == live2dtexno)
 		{
 			// Get mesh ref
 			RefData::getRef(L, mesh->meshRefID);
 			lua_getfield(L, -1, "setTexture");
 			lua_pushvalue(L, -2);
-			lua_pushvalue(L, loveimageidx);
+
+			if (mesh->blending == MultiplyBlending)
+			{
+				if (index != -1)
+					lua_pushvalue(L, index);
+				else
+					lua_pushnil(L);
+			}
+			else
+				lua_pushvalue(L, loveimageidx);
+
 			// Call it
 			lua_call(L, 2, 0);
+
+			// Remove mesh
+			lua_pop(L, 1);
 		}
 	}
+
+	// Remove canvas
+	if (index != -1)
+		lua_remove(L, index);
 }
 
 void Live2LOVE::setAnimationMovement(bool a)
@@ -763,9 +829,9 @@ void Live2LOVE::setMotion(const std::string& name, MotionModeID mode)
 {
 	// No motion? well load one first before using this.
 	if (!motion)
-		throw namedException("No motion loaded!");
+		throw NamedException("No motion loaded!");
 	else if (motionList.find(name) == motionList.end())
-		throw namedException("Motion not found");
+		throw NamedException("Motion not found");
 
 	CubismMotion *targetMotion = motionList[name];
 	motion->StartMotion(targetMotion, false, targetMotion->GetFadeInTime());
@@ -779,7 +845,7 @@ void Live2LOVE::setMotion()
 {
 	// clear motion
 	if (!motion)
-		throw namedException("No motion loaded!");
+		throw NamedException("No motion loaded!");
 
 	motionLoop = "";
 	motion->StopAllMotions();
@@ -789,9 +855,9 @@ void Live2LOVE::setExpression(const std::string& name)
 {
 	// No expression? Load one first!
 	if (!expression)
-		throw namedException("No expression loaded!");
+		throw NamedException("No expression loaded!");
 	else if (expressionList.find(name) == expressionList.end())
-		throw namedException("Expression not found");
+		throw NamedException("Expression not found");
 
 	CubismExpressionMotion *expr = expressionList[name];
 	expression->StartMotion(expressionList[name], false, expr->GetFadeInTime());
@@ -804,7 +870,7 @@ void Live2LOVE::loadMotion(const std::string& name, const std::pair<double, doub
 	// Load file
 	CubismMotion *motion = CubismMotion::Create((csmByte *) buf, size);
 	if (motion == nullptr)
-		throw namedException("Failed to load motion");
+		throw NamedException("Failed to load motion");
 
 	motion->SetFadeInTime(fade.first);
 	motion->SetFadeOutTime(fade.second);
@@ -822,7 +888,7 @@ void Live2LOVE::loadExpression(const std::string& name, const void *buf, size_t 
 
 	// Load file
 	CubismExpressionMotion *expr = CubismExpressionMotion::Create((csmByte *) buf, size);
-	if (expr == nullptr) throw namedException("Failed to load expression");
+	if (expr == nullptr) throw NamedException("Failed to load expression");
 
 	// Set expression
 	if (expressionList.find(name) != expressionList.end())
@@ -839,7 +905,7 @@ void Live2LOVE::loadPhysics(const void *buf, size_t size)
 
 	physics = CubismPhysics::Create((csmByte *) buf, size);
 	if (physics == nullptr)
-		throw namedException("Failed to load physics");
+		throw NamedException("Failed to load physics");
 }
 
 void Live2LOVE::loadPose(const void *buf, size_t size)
@@ -849,7 +915,7 @@ void Live2LOVE::loadPose(const void *buf, size_t size)
 
 	pose = CubismPose::Create((csmByte *) buf, size);
 	if (pose == nullptr)
-		throw namedException("Failed to load pose");
+		throw NamedException("Failed to load pose");
 }
 
 void Live2LOVE::initializeMotion()
@@ -991,6 +1057,53 @@ void Live2LOVE::drawStencil(Live2LOVEMesh *mesh, DrawCoordinates &drawInfo, int 
 		lua_pushboolean(L, 1);
 		lua_call(L, 4, 0);
 	}
+}
+
+int Live2LOVE::setupPMATexture(int width, int height, int imageIndex)
+{
+	// Create new Canvas same as the width and height of the image
+	RefData::getRef(L, "love.graphics.newCanvas");
+	lua_pushinteger(L, width);
+	lua_pushinteger(L, height);
+	lua_createtable(L, 0, 2);
+	{
+		lua_pushlstring(L, "dpiscale", 8);
+		lua_pushnumber(L, 1.0);
+		lua_rawset(L, -3);
+		lua_pushlstring(L, "format", 6);
+		lua_pushlstring(L, "rgba8", 5);
+		lua_rawset(L, -3);
+	}
+	lua_call(L, 3, 1);
+
+	// Push all graphics state
+	RefData::getRef(L, "love.graphics.push");
+	lua_pushlstring(L, "all", 3);
+	lua_call(L, 1, 0);
+
+	// Reset graphics state
+	RefData::getRef(L, "love.graphics.reset");
+	lua_call(L, 0, 0);
+
+	// Set canvas
+	RefData::getRef(L, "love.graphics.setCanvas");
+	lua_pushvalue(L, -2);
+	lua_call(L, 1, 0);
+
+	// Clear canvas
+	RefData::getRef(L, "love.graphics.clear");
+	lua_call(L, 0, 0);
+
+	// Draw image
+	RefData::getRef(L, "love.graphics.draw");
+	lua_pushvalue(L, imageIndex);
+	lua_call(L, 1, 0);
+
+	// Pop graphics state
+	RefData::getRef(L, "love.graphics.pop");
+	lua_call(L, 0, 0);
+
+	return lua_gettop(L);
 }
 
 } /* live2love */
